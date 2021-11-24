@@ -140,7 +140,7 @@ class Network():
                 winner = [torch.tensor([0]), torch.tensor([0]), torch.tensor([winner])]
                 self.winner_disk = True
             else:  # grid
-                winner = [torch.tensor([0]), torch.tensor([0]), torch.tensor([(winner-2)//self.grid_size]), torch.tensor([(winner-2) % self.grid_size])]
+                winner = [torch.tensor([0]), torch.tensor([0]), torch.tensor([(winner-2)%self.grid_size]), torch.tensor([(winner-2) // self.grid_size])]
                 self.winner_disk = False
 
             #winner = [torch.tensor([0]),torch.tensor([0]),torch.tensor([2]),torch.tensor([2])]
