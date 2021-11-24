@@ -117,7 +117,7 @@ class Network():
             action_chosen = torch.zeros((1, 1, 2+self.grid_size**2))
             action_chosen[0, 0, self.index_selected] = 1
 
-        return (action_chosen)
+        return (self.action)
 
     def calc_Output(self, device):
         Z, Z_disk = self.output_layer.forward([self.Y2, self.Y2_disk], [self.Xmod, self.Xmod_disk])

@@ -9,7 +9,7 @@ import numpy as np
 import torch
 
 
-class TaskTraceSearch():
+class Task():
 
     def __init__(self, n_hidden_features, tasktype):
 
@@ -30,6 +30,8 @@ class TaskTraceSearch():
         self.cur_reward = 0
         self.fix_reward = 0.2
         self.fin_reward = 1.5
+        
+        self.n_hidden_features = n_hidden_features
 
         self.flowcontrol = {'intertrial': self.do_intertrial,
                             'go': self.do_go}
@@ -43,11 +45,10 @@ class TaskTraceSearch():
         self.counter = 0
         self.state = 'intertrial'
         self.nwInput = torch.zeros((1, self.grid_size ** 2 + 2, self.n_hidden_features))
-        self.total_trials = self.total_trials + 1
 
     def doStep(self, action, dataset):
         self.trialEnd = False
-        self.flowcontrol[self.state](action)
+        self.flowcontrol[self.state](action,dataset)
         reward = self.cur_reward
         nwInput = self.nwInput
         trialEnd = self.trialEnd
@@ -62,15 +63,14 @@ class TaskTraceSearch():
         else:
             self.counter = self.counter + 1
 
-    def do_go(self, action):
+    def do_go(self, action,dataset):
         # Only the last saccade, see matlab for step by step tracing
         if self.counter <= 0:
-            grid_indexes = torch.where(action == 1)
-            linear_index = grid_indexes[3] * self.grid_size + grid_indexes[2]
             if (self.tasktype == 'tracesearch' and self.onlyTrace is False):
-                cond = linear_index
+                cond = action[-1]
             else:
-                cond = linear_index - 2
+                linear_indexes = action[3] * self.grid_size + action[2]
+                cond = linear_indexes
             if cond == self.trialTarget[-1] and (self.counter >= 0 or self.force_wait == 0):
                 self.cur_reward = self.cur_reward + self.fin_reward * 0.8
                 self.stateReset()

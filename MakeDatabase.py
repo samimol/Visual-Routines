@@ -9,7 +9,7 @@ import pickle
 import matplotlib.pyplot as plt
 
 GRIDSIZE = 7
-ITERATION = 50
+ITERATION = 60000
 MAXLENGTH = 6
 
 def SaveDic(file,filename):
