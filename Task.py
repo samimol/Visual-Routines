@@ -67,10 +67,9 @@ class Task():
         # Only the last saccade, see matlab for step by step tracing
         if self.counter <= 0:
             if (self.tasktype == 'tracesearch' and self.onlyTrace is False):
-                cond = action[-1]
+                cond = torch.where(action == 1)[-1]
             else:
-                linear_indexes = action[3] * self.grid_size + action[2]
-                cond = linear_indexes
+                cond = torch.where(action == 1)[-1] - 2
             if cond == self.trialTarget[-1] and (self.counter >= 0 or self.force_wait == 0):
                 self.cur_reward = self.cur_reward + self.fin_reward * 0.8
                 self.stateReset()

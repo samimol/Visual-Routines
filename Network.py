@@ -117,13 +117,13 @@ class Network():
             action_chosen = torch.zeros((1, 1, 2+self.grid_size**2))
             action_chosen[0, 0, self.index_selected] = 1
 
-        return (self.action)
+        return (action_chosen)
 
     def calc_Output(self, device):
         Z, Z_disk = self.output_layer.forward([self.Y2, self.Y2_disk], [self.Xmod, self.Xmod_disk])
 
         with torch.no_grad():
-            ZZ = torch.cat((Z_disk, torch.flatten(Z, start_dim=2)), dim=2)
+            ZZ = torch.cat((Z_disk, torch.flatten(Z.permute(0,1,3,2), start_dim=2)), dim=2) #Flatten in F order beause everything is in F order
 
             if self.controller == 'max-boltzmann':
                 if np.random.rand() < self.exploit_prob:
