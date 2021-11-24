@@ -8,47 +8,60 @@ from Stimulus import *
 import pickle
 import matplotlib.pyplot as plt
 
+GRIDSIZE = 7
+ITERATION = 60000
+MAXLENGTH = 6
+
+def SaveDic(file,filename):
+  with open(filename+'.pkl', 'wb') as handle:
+      pickle.dump(file, handle, protocol=pickle.HIGHEST_PROTOCOL)  
+
 
 ## Trace Task
 TraceTask = {'onlyblue': {}}
-Length = list(range(3,7))
+Length = list(range(3,MAXLENGTH+1))
 Length = [str(length) for length in Length]
 TraceTask.update({x: {} for x in Length})
 
-TraceTask['onlyblue'] = GenerateForGivenLength(0, 50, 'trace', True, 7)
-for i in range(2,7):
-    TraceTask[str(i)] = GenerateForGivenLength(i, 50, 'trace', False, 7)
+TraceTask['onlyblue'] = GenerateForGivenLength(0, ITERATION, 'trace', True, GRIDSIZE)
+for i in range(3,MAXLENGTH+1):
+    TraceTask[str(i)] = GenerateForGivenLength(i, ITERATION, 'trace', False, GRIDSIZE)
 
+SaveDic(TraceTask,'TraceTask')
 
 
 ## Search Trace Task
 SearchTraceTask = {'onlyblue': {}}
-Length = list(range(3,7))
+Length = list(range(3,MAXLENGTH+1))
 Length = [str(length) for length in Length]
 SearchTraceTask.update({x: {} for x in Length})
 
-SearchTraceTask['onlyblue'] = GenerateForGivenLength(0, 50, 'searchtrace', True, 7)
-for i in range(2,7):
-    SearchTraceTask[str(i)] = GenerateForGivenLength(i, 50, 'searchtrace', False, 7)
-
+SearchTraceTask['onlyblue'] = GenerateForGivenLength(0, ITERATION, 'searchtrace', True, GRIDSIZE)
+for i in range(3,MAXLENGTH+1):
+    SearchTraceTask[str(i)] = GenerateForGivenLength(i, ITERATION, 'searchtrace', False, GRIDSIZE)
+    
+SaveDic(SearchTraceTask,'SearchTraceTask')
 
 ##TraceSearchTask Onlytrace
-SearchTraceTaskOnlyTrace = {'onlyblue': {}}
-Length = list(range(3,7))
+TraceSearchTaskOnlyTrace = {'onlyblue': {}}
+Length = list(range(3,MAXLENGTH+1))
 Length = [str(length) for length in Length]
-SearchTraceTaskOnlyTrace.update({x: {} for x in Length})
+TraceSearchTaskOnlyTrace.update({x: {} for x in Length})
 
-SearchTraceTaskOnlyTrace['onlyblue'] = GenerateForGivenLength(0, 50, 'searchtrace', True, 7,onlytrace=True)
-for i in range(2,7):
-    SearchTraceTaskOnlyTrace[str(i)] = GenerateForGivenLength(i, 50, 'searchtrace', False, 7,onlytrace=True)
+TraceSearchTaskOnlyTrace['onlyblue'] = GenerateForGivenLength(0, ITERATION, 'searchtrace', True, GRIDSIZE,onlytrace=True)
+for i in range(3,MAXLENGTH+1):
+    TraceSearchTaskOnlyTrace[str(i)] = GenerateForGivenLength(i, ITERATION, 'searchtrace', False, GRIDSIZE,onlytrace=True)
+
+SaveDic(TraceSearchTaskOnlyTrace,'TraceSearchTaskOnlyTrace')
 
 ##TraceSearchTask 
-SearchTraceTask = {'onlyblue': {}}
-Length = list(range(3,7))
+TraceSearchTask = {'onlyblue': {}}
+Length = list(range(3,MAXLENGTH+1))
 Length = [str(length) for length in Length]
-SearchTraceTask.update({x: {} for x in Length})
+TraceSearchTask.update({x: {} for x in Length})
 
-SearchTraceTask['onlyblue'] = GenerateForGivenLength(0, 50, 'searchtrace', True, 7,onlytrace=False)
-for i in range(2,7):
-    SearchTraceTask[str(i)] = GenerateForGivenLength(i, 50, 'searchtrace', False, 7,onlytrace=False)
+TraceSearchTask['onlyblue'] = GenerateForGivenLength(0, ITERATION, 'searchtrace', True, GRIDSIZE,onlytrace=False)
+for i in range(3,MAXLENGTH+1):
+    TraceSearchTask[str(i)] = GenerateForGivenLength(i, ITERATION, 'searchtrace', False, GRIDSIZE,onlytrace=False)
 
+SaveDic(TraceSearchTask,'TraceSearchTask')
