@@ -9,8 +9,8 @@ import pickle
 import matplotlib.pyplot as plt
 
 GRIDSIZE = 20
-ITERATION = 10000
-MAXLENGTH = 16
+ITERATION = 3000
+MAXLENGTH = 20
 
 def SaveDic(file,filename):
   with open(filename+'.pkl', 'wb') as handle:
@@ -23,10 +23,11 @@ Length = list(range(3,MAXLENGTH+1))
 Length = [str(length) for length in Length]
 TraceTask.update({x: {} for x in Length})
 
-TraceTask['onlyblue'] = GenerateForGivenLength(0, ITERATION, 'trace', True, GRIDSIZE)
-for i in range(3,MAXLENGTH+1):
+TraceTask['onlyblue'] = GenerateForGivenLength(0, 160, 'trace', True, GRIDSIZE)
+for i in range(3,MAXLENGTH):
     TraceTask[str(i)] = GenerateForGivenLength(i, ITERATION, 'trace', False, GRIDSIZE)
     print(i)
+TraceTask[str(MAXLENGTH)] = GenerateForGivenLength(i, 10000, 'trace', False, GRIDSIZE)
 
 SaveDic(TraceTask,'TraceTask')
 print('Trace Done')

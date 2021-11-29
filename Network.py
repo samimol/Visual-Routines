@@ -10,7 +10,7 @@ from Layers import *
 
 class Network():
 
-    def __init__(self, n_input_features):
+    def __init__(self, n_input_features,grid_size):
         self.beta = 0.02
         self.n_input_features = n_input_features
         self.n_hidden_features = 4
@@ -18,7 +18,7 @@ class Network():
         self.controller = 'max-boltzmann'
         self.exploit_prob = 0.95
 
-        self.grid_size = 7
+        self.grid_size = grid_size
 
         self.input_layer = InputLayer(self.n_input_features, 4)
         self.hidden_layer_1 = HiddenLayer(self.n_input_features, 4, has_Ymod=True)
