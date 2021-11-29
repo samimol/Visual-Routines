@@ -46,16 +46,16 @@ class Task():
         self.state = 'intertrial'
         self.nwInput = torch.zeros((1, self.grid_size ** 2 + 2, self.n_hidden_features))
 
-    def doStep(self, action, dataset):
+    def doStep(self, action, dataset,indexs):
         self.trialEnd = False
-        self.flowcontrol[self.state](action,dataset)
+        self.flowcontrol[self.state](action,dataset,indexs)
         reward = self.cur_reward
         nwInput = self.nwInput
         trialEnd = self.trialEnd
         self.cur_reward = 0
         return(nwInput, reward, trialEnd)
 
-    def do_intertrial(self, action, dataset):
+    def do_intertrial(self, action, dataset,indexs):
         if self.counter == self.intertrial_dur:
             self.pickTrialType(dataset)
             self.state = 'go'
@@ -63,7 +63,7 @@ class Task():
         else:
             self.counter = self.counter + 1
 
-    def do_go(self, action,dataset):
+    def do_go(self, action,dataset,indexs):
         # Only the last saccade, see matlab for step by step tracing
         if self.counter <= 0:
             if (self.tasktype == 'tracesearch' and self.onlyTrace is False):
@@ -78,8 +78,8 @@ class Task():
         else:
             self.stateReset()
 
-    def pickTrialType(self, dataset):
-        index = np.random.randint(len(dataset['stimulus']))
+    def pickTrialType(self, dataset,indexs):
+        index = np.random.choice(indexs)
         self.nwInput = [dataset['stimulus'][index], dataset['stimulus_disk'][index]]
         self.trialTarget = dataset['target_curve'][index]
         self.trialDistr = dataset['distractor_curve'][index]
