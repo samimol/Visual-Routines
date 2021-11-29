@@ -23,7 +23,7 @@ class Network():
         self.input_layer = InputLayer(self.n_input_features, 4)
         self.hidden_layer_1 = HiddenLayer(self.n_input_features, 4, has_Ymod=True)
         self.hidden_layer_2 = HiddenLayer(self.n_hidden_features, self.n_hidden_features, has_Ymod=False)
-        self.output_layer = OutputLayer(self.n_hidden_features, self.n_input_features, 1)
+        self.output_layer = OutputLayer(self.n_hidden_features, self.n_input_features, 1,self.grid_size)
         self.horizontal = HorizLayer(self.n_input_features, self.grid_size)
 
         self.dosave = False
