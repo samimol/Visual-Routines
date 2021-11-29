@@ -57,7 +57,7 @@ class Task():
 
     def do_intertrial(self, action, dataset,indexs):
         if self.counter == self.intertrial_dur:
-            self.pickTrialType(dataset)
+            self.pickTrialType(dataset,indexs)
             self.state = 'go'
             self.counter = 0
         else:
