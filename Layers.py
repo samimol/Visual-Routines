@@ -210,7 +210,7 @@ class InputLayer(CustomLayer):
 
 class OutputLayer(CustomLayer):
 
-    def __init__(self, hidden_features, input_features, feature_out,grid_size,grid_size):
+    def __init__(self, hidden_features, input_features, feature_out,grid_size):
         super().__init__()
         self.grid_size = grid_size
         kernel_size = 2 * self.grid_size - 1
