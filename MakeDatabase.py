@@ -8,9 +8,9 @@ from Stimulus import *
 import pickle
 import matplotlib.pyplot as plt
 
-GRIDSIZE = 7
-ITERATION = 60000
-MAXLENGTH = 6
+GRIDSIZE = 20
+ITERATION = 10000
+MAXLENGTH = 16
 
 def SaveDic(file,filename):
   with open(filename+'.pkl', 'wb') as handle:

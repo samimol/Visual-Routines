@@ -30,8 +30,8 @@ class CustomLayer(nn.Module):
             m = m[:, :, None]
             traces[:, :, [0, 1, 1, 2], [1, 0, 2, 1]] = m
         elif self.LayerType == "output":
-            intermmask = torch.ones((13, 13))
-            intermmask[6, 6] = 0
+            intermmask = torch.ones((2 * self.grid_size - 1, 2 * self.grid_size - 1))
+            intermmask[self.grid_size - 1, self.grid_size - 1] = 0
             m = torch.mean(traces[:, :, intermmask == 1], axis=2)
             traces[:, :, intermmask == 1] = m.T
         return(traces)
@@ -210,16 +210,17 @@ class InputLayer(CustomLayer):
 
 class OutputLayer(CustomLayer):
 
-    def __init__(self, hidden_features, input_features, feature_out):
+    def __init__(self, hidden_features, input_features, feature_out,grid_size):
         super().__init__()
-        kernel_size = 13
+        self.grid_size = grid_size
+        kernel_size = 2 * self.grid_size - 1
         self.LayerType = 'output'
         self.w = [nn.Conv2d(hidden_features, feature_out, kernel_size, stride=1, padding='same'), nn.Conv1d(hidden_features, feature_out, 1, stride=1, padding='same')]
         self.skip = [nn.Conv2d(input_features, feature_out, 3, stride=1, padding='same', bias=False), nn.Conv1d(input_features, feature_out, 1, stride=1, padding='same', bias=False)]
 
         self.wmask = (1/14) * torch.ones_like(self.w[0].weight)  # In numpy we do the average over 49*49-49 = 2352 whereas here over 13*13 -1 = 168 so we have to divide by 14 (number of strides)
         #self.wmask = torch.ones_like(self.w[0].weight,requires_grad = False)
-        self.wmask[:, :, 6, 6] = 1/49
+        self.wmask[:, :, self.grid_size - 1, self.grid_size - 1] = 1/49
 
         self.skipmask = torch.zeros_like(self.skip[0].weight, requires_grad=False)
         self.skipmask[:, :, 1, 1] = 1  # /49
