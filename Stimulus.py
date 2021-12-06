@@ -11,7 +11,7 @@ def make_curves(curve, mask_original, curvelength,grid_size):
         first_elem = x[ind] + y[ind] * grid_size
         mask[first_elem % grid_size, first_elem // grid_size] = 1
         curve.append(first_elem)
-        return make_curves(curve, mask_original, curvelength,grid_size)
+        return make_curves(curve, mask, curvelength,grid_size)
     else:
         xend = curve[-1] % grid_size
         yend = curve[-1] // grid_size
@@ -31,7 +31,7 @@ def make_curves(curve, mask_original, curvelength,grid_size):
             curve.append(next_value[0] + next_value[1] * grid_size)
             for i in range(len(possible_next_value)):
                 mask[possible_next_value[i][0], possible_next_value[i][1]] = 1
-            return make_curves(curve, mask_original, curvelength,grid_size)
+            return make_curves(curve, mask, curvelength,grid_size)
         else:
             for i in range(len(consecutivesx)):
                 mask[consecutivesx[i], yend] = 1
@@ -213,3 +213,4 @@ def GenerateForGivenLength(length, NumberIteration, task, onlyblue, grid_size,on
             dictionnary['distractor_curve'].append(distractor_curve)
             i+=1
     return dictionnary
+

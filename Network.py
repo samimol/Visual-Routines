@@ -68,7 +68,7 @@ class Network():
         i = 0
         norm = 10
 
-        while i < 40 and norm > 0:
+        while i < 80 and norm > 0:
 
             prevY1 = self.Y1.detach()
 

@@ -51,7 +51,7 @@ class CustomLayer(nn.Module):
                             K[f, f2, 1, 1] = 0.1 * np.random.rand()
                         else:
                             K[f, f2, :, :] = - 0.1 * np.random.rand() * torch.ones((K.shape[2], K.shape[3])) / 100
-                            K[f, f2, 6, 6] = 0.1 * np.random.rand()
+                            K[f, f2, self.grid_size - 1, self.grid_size - 1] = 0.1 * np.random.rand()
                 else:
                     K[f, f2, 0] = 0.1 * np.random.rand()
             if layer.bias is not None:
@@ -259,7 +259,7 @@ class HorizLayer(CustomLayer):
         self.weight_DiskToDisk = torch.ones((1, features, 2))
 
         for i in range(features):
-            self.weight_GridToGrid[0, i, :, :] *= 0.1 * np.random.rand()
+            self.weight_GridToGrid[0, i, :, :] *= 0.1 * np.random.rand() * torch.eye(self.grid_size)
             self.weight_DiskToDisk[0, i, :] *= 0.1 * np.random.rand()
 
         self.weight_GridToGrid = torch.nn.Parameter(self.weight_GridToGrid)
@@ -284,7 +284,8 @@ class HorizLayer(CustomLayer):
         traces_DiskToGrid = torch.autograd.grad(upper[1], self.weight_DiskToGrid, grad_outputs=z[1], retain_graph=True, allow_unused=True)[0]
         traces_GridToGrid = torch.autograd.grad(upper[1], self.weight_GridToGrid, grad_outputs=z[1], retain_graph=True, allow_unused=True)[0]
 
-        traces_GridToGrid[:] = torch.mean(traces_GridToGrid, axis=(2, 3), keepdim=True)
+        for i in range(self.features):
+            traces_GridToGrid[0,i,:,:] = torch.mean(traces_GridToGrid, axis=(2, 3), keepdim=True) * torch.eye(self.grid_size)
         traces_DiskToDisk[:] = torch.mean(traces_DiskToDisk, axis=(2), keepdim=True)
 
         with torch.no_grad():
