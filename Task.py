@@ -104,7 +104,7 @@ class Task():
                 try:
                     mask = np.zeros((self.grid_size, self.grid_size))
                     curve1, mask1 = self.make_curves([], mask)
-                    curve2, mask2 = self.make_curves([], mask)
+                    curve2, mask2 = self.make_curves([], mask1)
                     break
                 except IndexError:
                     pass

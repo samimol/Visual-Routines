@@ -23,7 +23,6 @@ class CustomLayer(nn.Module):
 
     def AverageTraces(self, traces, mask, diag=None):
         traces *= mask
-        traces = torch.clamp(traces, None, 1)
         if self.LayerType != "output" or diag is True:
             m = torch.mean(traces[:, :, [0, 1, 1, 2], [1, 0, 2, 1]], axis=2)
             m = m[:, :, None]
@@ -65,11 +64,13 @@ class CustomLayer(nn.Module):
                 trace = torch.autograd.grad(upper, [layer.weight, layer.bias], grad_outputs=z, retain_graph=True, allow_unused=True)
                 bias_traces = trace[1]
                 bias_traces[:] = torch.mean(bias_traces)
+                bias_traces = torch.clamp(bias_traces, None, 1)
             else:
                 trace = torch.autograd.grad(upper, layer.weight, grad_outputs=z, retain_graph=True, allow_unused=True)
             weight_traces = trace[0]
             if average:
                 weight_traces = self.AverageTraces(weight_traces, mask, diag)
+            weight_traces = torch.clamp(weight_traces, None, 1)
             weight_update = layer.weight + beta * delta * weight_traces
             layer.weight.copy_(weight_update)
             if layer.bias is not None:
