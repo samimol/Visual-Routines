@@ -60,7 +60,7 @@ class CustomLayer(nn.Module):
         if layer.bias is not None:
             layer.bias = torch.nn.Parameter(b)
 
-    def UpdateWeight(self, layer, upper, beta, delta, mask=None, z=None, diag=None, disk=False):
+    def UpdateWeight(self, layer, upper, beta, delta, mask=None, z=None, diag=None, average=True):
         with torch.no_grad():
             if layer.bias is not None:
                 trace = torch.autograd.grad(upper, [layer.weight, layer.bias], grad_outputs=z, retain_graph=True, allow_unused=True)
@@ -69,7 +69,7 @@ class CustomLayer(nn.Module):
             else:
                 trace = torch.autograd.grad(upper, layer.weight, grad_outputs=z, retain_graph=True, allow_unused=True)
             weight_traces = trace[0]
-            if not disk:
+            if average:
                 weight_traces = self.AverageTraces(weight_traces, mask, diag)
             weight_update = layer.weight + beta * delta * weight_traces
             layer.weight.copy_(weight_update)
@@ -157,15 +157,15 @@ class HiddenLayer(CustomLayer):
         self.v[0] = self.UpdateWeight(self.v[0], upper[0][0], beta, delta, self.vtmask, z[0][0])
         self.t[0] = self.UpdateWeight(self.t[0], upper[0][0], beta, delta, self.vtmask, z[0][0])
 
-        self.v[1] = self.UpdateWeight(self.v[1], upper[0][1], beta, delta, z=z[0][1], disk=True)
-        self.t[1] = self.UpdateWeight(self.t[1], upper[0][1], beta, delta, z=z[0][1], disk=True)
+        self.v[1] = self.UpdateWeight(self.v[1], upper[0][1], beta, delta, z=z[0][1], average=False)
+        self.t[1] = self.UpdateWeight(self.t[1], upper[0][1], beta, delta, z=z[0][1], average=False)
 
         if self.has_Ymod:
             self.u[0] = self.UpdateWeight(self.u[0], upper[1][0], beta, delta, self.umask, z[1][0])
-            self.u[1] = self.UpdateWeight(self.u[1], upper[1][1], beta, delta, z=z[1][1], disk=True)
+            self.u[1] = self.UpdateWeight(self.u[1], upper[1][1], beta, delta, z=z[1][1], average=False)
             if self.upper_ymod:
                 self.umod[0] = self.UpdateWeight(self.umod[0], upper[1][0], beta, delta, self.umask, z[1][0])
-                self.umod[1] = self.UpdateWeight(self.umod[1][1], upper[1], beta, delta, z=z[1][1], disk=True)
+                self.umod[1] = self.UpdateWeight(self.umod[1][1], upper[1], beta, delta, z=z[1][1], average=False)
 
 
 class InputLayer(CustomLayer):
@@ -204,8 +204,8 @@ class InputLayer(CustomLayer):
         self.u[0] = self.UpdateWeight(self.u[0], upper[0], beta, delta, self.umask, z[0])
         self.umod[0] = self.UpdateWeight(self.umod[0], upper[0], beta, delta, self.umask, z[0])
 
-        self.u[1] = self.UpdateWeight(self.u[1], upper[1], beta, delta, z=z[1], disk=True)
-        self.umod[1] = self.UpdateWeight(self.umod[1], upper[1], beta, delta, z=z[1], disk=True)
+        self.u[1] = self.UpdateWeight(self.u[1], upper[1], beta, delta, z=z[1], average=False)
+        self.umod[1] = self.UpdateWeight(self.umod[1], upper[1], beta, delta, z=z[1], average=False)
 
 
 class OutputLayer(CustomLayer):
@@ -216,18 +216,15 @@ class OutputLayer(CustomLayer):
         kernel_size = 2 * self.grid_size - 1
         self.LayerType = 'output'
         self.w = [nn.Conv2d(hidden_features, feature_out, kernel_size, stride=1, padding='same'), nn.Conv1d(hidden_features, feature_out, 1, stride=1, padding='same')]
-        self.skip = [nn.Conv2d(input_features, feature_out, 3, stride=1, padding='same', bias=False), nn.Conv1d(input_features, feature_out, 1, stride=1, padding='same', bias=False)]
+        self.skip = [nn.Conv2d(input_features, feature_out, 1, stride=1, padding='same', bias=False), nn.Conv1d(input_features, feature_out, 1, stride=1, padding='same', bias=False)]
 
         self.wmask = (1/14) * torch.ones_like(self.w[0].weight)  # In numpy we do the average over 49*49-49 = 2352 whereas here over 13*13 -1 = 168 so we have to divide by 14 (number of strides)
         #self.wmask = torch.ones_like(self.w[0].weight,requires_grad = False)
-        self.wmask[:, :, self.grid_size - 1, self.grid_size - 1] = 1/49
-
-        self.skipmask = torch.zeros_like(self.skip[0].weight, requires_grad=False)
-        self.skipmask[:, :, 1, 1] = 1  # /49
+        self.wmask[:, :, self.grid_size - 1, self.grid_size - 1] = 1/50
 
         # Initializing weights
         self.init_weights(self.w[0])
-        self.init_weights(self.skip[0], diag=True)
+        self.init_weights(self.skip[0], disk=True) #not disk but same structure
 
         self.init_weights(self.w[1], disk=True)
         self.init_weights(self.skip[1], disk=True)
@@ -239,11 +236,11 @@ class OutputLayer(CustomLayer):
 
     def UpdateLayer(self, upper, beta, delta, winner_disk):
         if winner_disk:
-            self.w[1] = self.UpdateWeight(self.w[1], upper, beta, delta, disk=True)
-            self.skip[1] = self.UpdateWeight(self.skip[1], upper, beta, delta, disk=True)
+            self.w[1] = self.UpdateWeight(self.w[1], upper, beta, delta, average=False)
+            self.skip[1] = self.UpdateWeight(self.skip[1], upper, beta, delta, average=False)
         else:
             self.w[0] = self.UpdateWeight(self.w[0], upper, beta, delta, self.wmask)
-            self.skip[0] = self.UpdateWeight(self.skip[0], upper, beta, delta, self.skipmask, diag=True)
+            self.skip[0] = self.UpdateWeight(self.skip[0], upper, beta, delta, average=False)
 
 
 class HorizLayer(CustomLayer):
