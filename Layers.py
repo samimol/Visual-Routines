@@ -5,7 +5,6 @@ Created on Fri Oct 29 12:29:28 2021
 @author: Sami
 """
 import numpy as np
-
 import torch
 import torch.nn as nn
 
@@ -78,7 +77,7 @@ class CustomLayer(nn.Module):
                 layer.bias.copy_(bias_update)
         return(layer)
 
-    def toCustom(self, device):
+    def to(self, device):
         for i in range(2):
             if self.LayerType == 'input':
                 self.u[i].to(device)

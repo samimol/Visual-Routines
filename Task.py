@@ -31,6 +31,9 @@ class Task():
         self.fin_reward = 1.5
         
         self.n_hidden_features = n_hidden_features
+        
+        self.targ_display = torch.zeros((1, self.n_hidden_features, self.grid_size, self.grid_size))
+        self.targ_display_disk = torch.zeros((1, self.n_hidden_features, 2))
 
         self.flowcontrol = {'intertrial': self.do_intertrial,
                             'go': self.do_go}
@@ -43,7 +46,7 @@ class Task():
         self.trialEnd = True
         self.counter = 0
         self.state = 'intertrial'
-        self.nwInput = torch.zeros((1, self.grid_size ** 2 + 2, self.n_hidden_features))
+        self.nwInput = [self.target_display, self.target_display_disk]
 
     def doStep(self, action):
         self.trialEnd = False
@@ -80,10 +83,7 @@ class Task():
 
     def pickTrialType(self):
         positionRed = np.random.randint(2)
-        if positionRed == 0:
-            positionYellow = 1
-        else:
-            positionYellow = 0
+        positionYellow = 1 if positionRed == 0 else 0
         self.position = [positionRed, positionYellow]
         self.feature_target = np.random.randint(2) 
         curve1,curve2 = self.PickCurve()

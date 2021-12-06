@@ -68,7 +68,7 @@ class Network():
         i = 0
         norm = 10
 
-        while i < 80 and norm > 0:
+        while i < 40 and norm > 0:
 
             prevY1 = self.Y1.detach()
 
@@ -91,6 +91,9 @@ class Network():
                 self.saveY1_disk[len(self.saveY1_disk) - 1].append(self.Y1_disk.detach())
                 self.saveY1mod_disk[len(self.saveY1mod_disk) - 1].append(self.Y1mod_disk.detach())
                 self.saveY2_disk[len(self.saveY2_disk) - 1].append(self.Y2_disk.detach())
+                
+                self.Z, self.Z_disk = self.calc_Output(device)
+                self.saveQ[len(self.saveQ) - 1].append(self.Z.detach())
 
             with torch.no_grad():
                 norm = torch.linalg.norm(self.Y1[0, -1, :]-prevY1[0, -1, :], ord=float('inf'))
@@ -224,7 +227,6 @@ class Network():
         return (Zxmod, Zy1, Zy1mod, Zy2, Zxmod_disk, Zy1_disk, Zy1mod_disk, Zy2_disk)
 
     def doLearn(self, reward):
-
         with torch.no_grad():
             if self.winner_disk:
                 exp_value = self.Z_disk[self.action]
@@ -250,10 +252,10 @@ class Network():
         return(x, detached)
 
     def to(self, device):
-        self.input_layer.toCustom(device)
-        self.hidden_layer_1.toCustom(device)
-        self.hidden_layer_2.toCustom(device)
-        self.output_layer.toCustom(device)
+        self.input_layer.to(device)
+        self.hidden_layer_1.to(device)
+        self.hidden_layer_2.toCusto(device)
+        self.output_layer.to(device)
 
         self.horizontal.weight_GridToDisk = self.horizontal.weight_GridToDisk.to(device)
         self.horizontal.weight_DiskToGrid = self.horizontal.weight_DiskToGrid.to(device)
