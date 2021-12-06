@@ -280,9 +280,12 @@ class HorizLayer(CustomLayer):
         traces_DiskToGrid = torch.autograd.grad(upper[1], self.weight_DiskToGrid, grad_outputs=z[1], retain_graph=True, allow_unused=True)[0]
         traces_GridToGrid = torch.autograd.grad(upper[1], self.weight_GridToGrid, grad_outputs=z[1], retain_graph=True, allow_unused=True)[0]
 
-        for i in range(self.features):
-            traces_GridToGrid[0,i,:,:] = torch.mean(traces_GridToGrid, axis=(2, 3), keepdim=True) * torch.eye(self.grid_size)
+        
+        traces_GridToGrid[:] = torch.mean(traces_GridToGrid, axis=(2, 3), keepdim=True) 
         traces_DiskToDisk[:] = torch.mean(traces_DiskToDisk, axis=(2), keepdim=True)
+
+        for i in range(self.features):
+            traces_GridToGrid[0,i,:,:] = traces_GridToGrid[0,i,:,:] * torch.eye(self.grid_size)
 
         with torch.no_grad():
             weight_GridToDisk_update = self.weight_GridToDisk + beta * delta * traces_GridToDisk

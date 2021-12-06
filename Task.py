@@ -30,6 +30,8 @@ class Task():
         self.fix_reward = 0.2
         self.fin_reward = 1.5
         
+        self.intertrial_dur = 0
+        
         self.n_hidden_features = n_hidden_features
         
         self.targ_display = torch.zeros((1, self.n_hidden_features, self.grid_size, self.grid_size))
@@ -147,8 +149,8 @@ class Task():
         
 class Trace(Task):
     
-    def __init__(self):
-        super().__init__()
+    def __init__(self,n_hidden_features, tasktype):
+        super().__init__(n_hidden_features, tasktype)
         
     def DrawStimulus(self,curve1,curve2):
         targ_display = torch.zeros((1, self.n_hidden_features, self.grid_size, self.grid_size))
@@ -179,8 +181,8 @@ class Trace(Task):
         
 class SearchTrace(Task):
     
-    def __init__(self):
-        super().__init__()
+    def __init__(self,n_hidden_features, tasktype):
+        super().__init__(n_hidden_features, tasktype)
         
     def DrawStimulus(self,curve1,curve2):
         targ_display = torch.zeros((1, self.n_hidden_features, self.grid_size, self.grid_size))
@@ -220,8 +222,8 @@ class SearchTrace(Task):
         
 class TraceSearch(Task):      
     
-    def __init__(self):
-        super().__init__()
+    def __init__(self,n_hidden_features, tasktype):
+        super().__init__(n_hidden_features, tasktype)
         
     def DrawStimulus(self,curve1,curve2):
         targ_display = torch.zeros((1, self.n_hidden_features, self.grid_size, self.grid_size))
