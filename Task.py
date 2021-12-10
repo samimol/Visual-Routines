@@ -20,7 +20,7 @@ class Task():
         self.counter = 0
         self.trialEnd = False
 
-        self.onlyTrace = True
+        self.onlytrace = True
 
         self.state = 'intertrial'
 
@@ -71,7 +71,7 @@ class Task():
     def do_go(self, action):
         # Only the last saccade, see matlab for step by step tracing
         if self.counter <= 0:
-            if (self.tasktype == 'tracesearch' and self.onlyTrace is False):
+            if (self.tasktype == 'tracesearch' and self.onlytrace is False):
                 cond = torch.where(action == 1)[-1]
             else:
                 cond = torch.where(action == 1)[-1] - 2
@@ -226,6 +226,14 @@ class TraceSearch(Task):
         super().__init__(n_hidden_features, tasktype)
         
     def DrawStimulus(self,curve1,curve2):
+        curve1.reverse()
+        curve2.reverse()
+        if not self.onlytrace:
+            if self.onlyblue:
+                curve1.append(self.position[self.feature_target])
+            else:
+                curve1.append(self.position[0])
+                curve2.append(self.position[1])       
         targ_display = torch.zeros((1, self.n_hidden_features, self.grid_size, self.grid_size))
         targ_display_disk = torch.zeros((1, self.n_hidden_features, 2))
         if self.onlyblue:
@@ -259,15 +267,15 @@ class TraceSearch(Task):
                 targ_display_disk[:, 0, self.position[0]] = 1
                 targ_display_disk[:, 1, self.position[1]] = 1
         if self.onlyblue:
-            self.target_curve = curve1
-            self.distractor_curve = curve2
+            self.trialTarget = curve1
+            self.trialDistr = curve2
         else:
             if self.feature_target == 0:
-                self.target_curve = curve1
-                self.distractor_curve = curve2
+                self.trialTarget = curve1
+                self.trialDistr = curve2
             else:
-                self.target_curve = curve2
-                self.distractor_curve = curve1
+                self.trialTarget = curve2
+                self.trialDistr = curve1
         self.target_display = targ_display
         self.target_display_disk = targ_display_disk
     
