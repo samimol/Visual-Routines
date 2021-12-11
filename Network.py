@@ -94,6 +94,7 @@ class Network():
                 
                 self.Z, self.Z_disk = self.calc_Output(device)
                 self.saveQ[len(self.saveQ) - 1].append(self.Z.detach())
+                self.saveQ_disk[len(self.saveQ_disk) - 1].append(self.Z_disk.detach())
 
             with torch.no_grad():
                 norm = torch.linalg.norm(self.Y1[0, -1, :]-prevY1[0, -1, :], ord=float('inf'))
