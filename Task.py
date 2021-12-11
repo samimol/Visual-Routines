@@ -12,7 +12,7 @@ import random
 
 class Task():
 
-    def __init__(self, n_hidden_features, tasktype):
+    def __init__(self, n_hidden_features):
 
         self.grid_size = 7
 
@@ -40,7 +40,6 @@ class Task():
         self.flowcontrol = {'intertrial': self.do_intertrial,
                             'go': self.do_go}
 
-        self.tasktype = tasktype
         if self.tasktype != 'searchtrace' and self.tasktype != 'trace' and self.tasktype != 'tracesearch':
             raise Exception('Task type must be either searchtrace or trace or tracesearch')
 
@@ -149,8 +148,9 @@ class Task():
         
 class Trace(Task):
     
-    def __init__(self,n_hidden_features, tasktype):
-        super().__init__(n_hidden_features, tasktype)
+    def __init__(self,n_hidden_features):
+        self.tasktype = 'trace'
+        super().__init__(n_hidden_features)
         
     def DrawStimulus(self,curve1,curve2):
         targ_display = torch.zeros((1, self.n_hidden_features, self.grid_size, self.grid_size))
@@ -181,8 +181,9 @@ class Trace(Task):
         
 class SearchTrace(Task):
     
-    def __init__(self,n_hidden_features, tasktype):
-        super().__init__(n_hidden_features, tasktype)
+    def __init__(self,n_hidden_features):
+        self.tasktype = 'searchtrace'
+        super().__init__(n_hidden_features)
         
     def DrawStimulus(self,curve1,curve2):
         targ_display = torch.zeros((1, self.n_hidden_features, self.grid_size, self.grid_size))
@@ -222,8 +223,9 @@ class SearchTrace(Task):
         
 class TraceSearch(Task):      
     
-    def __init__(self,n_hidden_features, tasktype):
-        super().__init__(n_hidden_features, tasktype)
+    def __init__(self,n_hidden_features):
+        self.tasktype = 'tracesearch'
+        super().__init__(n_hidden_features)
         
     def DrawStimulus(self,curve1,curve2):
         curve1.reverse()
