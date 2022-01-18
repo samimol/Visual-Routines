@@ -27,6 +27,7 @@ class Network():
         self.horizontal = HorizLayer(self.n_input_features, self.grid_size)
 
         self.dosave = False
+        
         self.saveX = []
         self.saveXmod = []
         self.saveY1 = []
@@ -39,7 +40,7 @@ class Network():
         self.saveY1_disk = []
         self.saveY1mod_disk = []
         self.saveY2_disk = []
-
+        
     def doStep(self, input_env, reward, reset_traces, device):
 
         if self.dosave:
@@ -57,18 +58,18 @@ class Network():
             self.saveY2_disk.append([])
 
         self.Xmod = torch.zeros(1, self.n_input_features, self.grid_size, self.grid_size, device=device)
-        self.Xmod_disk = torch.zeros(1, self.n_input_features, 1, device=device)
+        self.Xmod_disk = torch.zeros(1, self.n_input_features, 2, device=device)
         self.Y1 = torch.zeros(1, self.n_hidden_features, self.grid_size, self.grid_size, device=device)
-        self.Y1_disk = torch.zeros(1, self.n_hidden_features, 1, device=device)
+        self.Y1_disk = torch.zeros(1, self.n_hidden_features, 2, device=device)
         self.Y1mod = torch.zeros(1, self.n_hidden_features, self.grid_size, self.grid_size, device=device)
-        self.Y1mod_disk = torch.zeros(1, self.n_hidden_features, 1, device=device)
+        self.Y1mod_disk = torch.zeros(1, self.n_hidden_features, 2, device=device)
         self.Y2 = torch.zeros(1, self.n_hidden_features, self.grid_size, self.grid_size, device=device)
-        self.Y2_disk = torch.zeros(1, self.n_hidden_features, 1, device=device)
+        self.Y2_disk = torch.zeros(1, self.n_hidden_features, 2, device=device)
 
         i = 0
         norm = 10
 
-        while i < 40 and norm > 0:
+        while i < 50 and norm > 0:
 
             prevY1 = self.Y1.detach()
 
@@ -144,7 +145,7 @@ class Network():
                 winner = [torch.tensor([0]), torch.tensor([0]), torch.tensor([winner])]
                 self.winner_disk = True
             else:  # grid
-                winner = [torch.tensor([0]), torch.tensor([0]), torch.tensor([(winner-2)%self.grid_size]), torch.tensor([(winner-2) // self.grid_size])]
+                winner = [torch.tensor([0]), torch.tensor([0]), torch.tensor([(winner-2)%self.grid_size]), torch.tensor([torch.div(winner-2,self.grid_size,rounding_mode='floor')])]
                 self.winner_disk = False
 
             #winner = [torch.tensor([0]),torch.tensor([0]),torch.tensor([2]),torch.tensor([2])]

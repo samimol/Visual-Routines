@@ -14,7 +14,7 @@ class Task():
 
     def __init__(self, n_hidden_features):
 
-        self.grid_size = 7
+        self.grid_size = 20
 
         self.state = 0
         self.counter = 0
