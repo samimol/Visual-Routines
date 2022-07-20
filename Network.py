@@ -72,7 +72,7 @@ class Network():
 
         while i < 50 and norm > 0:
 
-            prevY1 = self.Y1.detach()
+            prevY1mod = self.Y1mod.detach()
 
             [XmodHoriz, Xmod_diskHoriz] = self.horizontal.forward(self.Xmod, self.Xmod_disk)
             ([self.X, self.X_disk], [self.Xmod, self.Xmod_disk]) = self.input_layer.forward([self.Y1, self.Y1_disk], [self.Y1mod, self.Y1mod_disk], input_env)
@@ -99,7 +99,7 @@ class Network():
                 self.saveQ_disk[len(self.saveQ_disk) - 1].append(self.Z_disk.detach())
 
             with torch.no_grad():
-                norm = torch.linalg.norm(self.Y1[0, :]-prevY1[0, :])
+                norm = torch.linalg.norm(self.Y1mod[0, :, :]-prevY1mod[0, :, :])
 
             i += 1
 
@@ -199,10 +199,9 @@ class Network():
             Zy1mod = Zy1mod + init[1]
 
             Zy1 = torch.autograd.grad(self.Y2, self.Y1, grad_outputs=Zy2, retain_graph=True, allow_unused=True)[0]
-            Zy1 = Zy1 + torch.autograd.grad(self.Xmod, self.Y1test, grad_outputs=Zxmod, retain_graph=True, allow_unused=True)[0]
             Zy1 = Zy1 + init[2]
 
-            Zxmod = torch.autograd.grad(self.Y1, self.Xmod, grad_outputs=Zy1, retain_graph=True, allow_unused=True)[0]
+            Zxmod = torch.autograd.grad(self.Y1mod, self.Xmod, grad_outputs=Zy1mod, retain_graph=True, allow_unused=True)[0]
             Zxmod = Zxmod + torch.autograd.grad(self.Xmod, self.Xmodtest, grad_outputs=ZXmod_prev, retain_graph=True, allow_unused=True)[0]
             Zxmod = Zxmod + torch.autograd.grad(self.Xmod_disk, self.Xmodtest, grad_outputs=Zxmod_disk_prev, retain_graph=True, allow_unused=True)[0]
             Zxmod = Zxmod + init[3]
@@ -215,10 +214,9 @@ class Network():
             Zy1mod_disk = Zy1mod_disk + init_disk[1]
 
             Zy1_disk = torch.autograd.grad(self.Y2_disk, self.Y1_disk, grad_outputs=Zy2_disk, retain_graph=True, allow_unused=True)[0]
-            Zy1_disk = Zy1_disk + torch.autograd.grad(self.Xmod_disk, self.Y1test_disk, grad_outputs=Zxmod_disk, retain_graph=True, allow_unused=True)[0]
             Zy1_disk = Zy1_disk + init_disk[2]
 
-            Zxmod_disk = Zxmod_disk + torch.autograd.grad(self.Y1_disk, self.Xmod_disk, grad_outputs=Zy1_disk, retain_graph=True, allow_unused=True)[0]
+            Zxmod_disk = Zxmod_disk + torch.autograd.grad(self.Y1mod_disk, self.Xmod_disk, grad_outputs=Zy1mod_disk, retain_graph=True, allow_unused=True)[0]
             Zxmod_disk = Zxmod_disk + torch.autograd.grad(self.Xmod_disk, self.Xmodtest_disk, grad_outputs=Zxmod_disk_prev, retain_graph=True, allow_unused=True)[0]
             Zxmod_disk = Zxmod_disk + torch.autograd.grad(self.Xmod, self.Xmodtest_disk, grad_outputs=ZXmod_prev, retain_graph=True, allow_unused=True)[0]
             Zxmod_disk = Zxmod_disk + init_disk[3]

@@ -158,7 +158,7 @@ class Trace(Task):
         display = torch.zeros((1, self.n_hidden_features, self.grid_size, self.grid_size))
         display_disk = torch.zeros((1, self.n_hidden_features, 2))
         if self.no_curves:
-                display[:, 0, curve1[0] % self.grid_size, curve1[0]//self.grid_size] = 1
+                display[:, 0, curve1[0] % self.grid_size, curve1[0]//self.grid_size] = 0
                 display[:, 3, curve1[1] % self.grid_size, curve1[1]//self.grid_size] = 1
         else:
                 for i in range(len(curve1)):

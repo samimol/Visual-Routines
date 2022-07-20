@@ -21,6 +21,11 @@ class CustomLayer(nn.Module):
         x = torch.clamp(x, 0)
         x[thresh <= x] = torch.log(1.5 * x[thresh <= x] + 1) + thresh - torch.log(torch.tensor(1.5 * thresh + 1))
         return x
+    
+    def MultiFunction(self,x):
+      param = 100
+      return param*x/(torch.sqrt(1+(param**2)*(x**2)))
+      #return x
 
     def AverageTraces(self, traces, mask):
         traces *= mask
@@ -35,7 +40,7 @@ class CustomLayer(nn.Module):
             traces[:, :, intermmask == 1] = m.T
         return(traces)
 
-    def init_weights(self, layer, disk=False):
+    def init_weights(self, layer, disk=False, FB=True):
         kernel = torch.zeros(layer.weight.shape)
         if layer.bias is not None:
             bias = torch.zeros(layer.bias.shape)
@@ -43,9 +48,12 @@ class CustomLayer(nn.Module):
             for f2 in range(kernel.shape[1]):
                 if not disk:
                     if self.LayerType != "output":
-                        ################REMOVE THE LOOP WITH A RANDOM TORCH OF THE CORRECT SHAPE
                         kernel[f, f2, 1, 1] = self.initialisation_range * np.random.rand()
-                        kernel[f, f2, [0, 1, 1, 2], [1, 0, 2, 1]] = self.initialisation_range * np.random.rand()
+                        if FB:
+                            kernel[f, f2, 0,1] = 0.1 * np.random.rand() + 0.2
+                            kernel[f, f2, 1,0] = 0.1 * np.random.rand() + 0.2
+                            kernel[f, f2, 1,2] = 0.1 * np.random.rand() + 0.2
+                            kernel[f, f2, 2,1] = 0.1 * np.random.rand() + 0.2
                     else:
                         kernel[f, f2, :, :] = - 0.1 * np.random.rand() * torch.ones((kernel.shape[2], kernel.shape[3])) / 100
                         kernel[f, f2, self.grid_size - 1, self.grid_size - 1] = self.initialisation_range * np.random.rand()
@@ -66,7 +74,6 @@ class CustomLayer(nn.Module):
                 delta_weight = torch.autograd.grad(upper, [layer.weight, layer.bias], grad_outputs=z, retain_graph=True, allow_unused=True)
                 delta_bias = delta_weight[1]
                 delta_bias = torch.clamp(delta_bias, None, 1)
-                delta_bias[:] = torch.mean(delta_bias)
             else:
                 delta_weight = torch.autograd.grad(upper, layer.weight, grad_outputs=z, retain_graph=True, allow_unused=True)
             delta_weight = delta_weight[0]
@@ -74,7 +81,10 @@ class CustomLayer(nn.Module):
             
             # Averaging the weight and bias and updating the weights with RPE
             if average:
-                delta_weight = self.AverageTraces(delta_weight, mask)
+                if self.LayerType == 'output':
+                    delta_weight = self.AverageTraces(delta_weight, mask)
+                else:
+                    delta_weight = delta_weight*mask
             weight_update = layer.weight + beta * delta * delta_weight
             layer.weight.copy_(weight_update)
             if layer.bias is not None:
@@ -112,34 +122,27 @@ class InputLayer(CustomLayer):
         kernel_size = 3
         
         # First element is grid to grid, second element is disk to disk
-        self.u = [nn.Conv2d(feature_out, feature_in, kernel_size, stride=1, padding='same'), nn.Conv1d(feature_out, feature_in, 1, stride=1, padding='same')]
-        self.umod = [nn.Conv2d(feature_out, feature_in, kernel_size, stride=1, padding='same', bias=False), nn.Conv1d(feature_out, feature_in, 1, stride=1, padding='same', bias=False)]
+        self.umod = [nn.Conv2d(feature_out, feature_in, kernel_size, stride=1, padding='same', bias=True), nn.Conv1d(feature_out, feature_in, 1, stride=1, padding='same', bias=True)]
 
         # Initializing weights
-        self.init_weights(self.u[0])
         self.init_weights(self.umod[0])
-
-        self.init_weights(self.u[1], disk=True)
         self.init_weights(self.umod[1], disk=True)
 
         # Setting the mask to have connections only between neighboours
-        self.umask = torch.tensor([[0, 1, 0], [1, 1, 1], [0, 1, 0]], requires_grad=False)
-        self.umask = torch.tile(self.umask, (feature_in, feature_out, 1, 1))
-
+        self.umask = torch.clone(self.umod[0].weight.detach())
+        self.umask[self.umask != 0] = 1    
+        
     def forward(self, upper_y, upper_ymod, input):
         Y = input[0]
         Y_disk = input[1]
         
-        Ymod = self.u[0](upper_y[0]) + self.umod[0](upper_ymod[0])
-        Ymod_disk = self.u[1](upper_y[1]) + self.umod[1](upper_ymod[1])
+        Ymod = self.umod[0](upper_ymod[0])
+        Ymod_disk = self.umod[1](upper_ymod[1])
 
         return([Y, Y_disk], [Ymod, Ymod_disk])
 
     def UpdateLayer(self, upper, z, beta, delta):
-        self.u[0] = self.UpdateWeight(self.u[0], upper[0], beta, delta, self.umask, z[0])
         self.umod[0] = self.UpdateWeight(self.umod[0], upper[0], beta, delta, self.umask, z[0])
-
-        self.u[1] = self.UpdateWeight(self.u[1], upper[1], beta, delta, z=z[1], average=False)
         self.umod[1] = self.UpdateWeight(self.umod[1], upper[1], beta, delta, z=z[1], average=False)
 
 
@@ -153,17 +156,17 @@ class HiddenLayer(CustomLayer):
         self.LayerType = 'hidden'
         self.has_Ymod = has_Ymod # If the layer has a modulated group
         self.upper_ymod = upper_ymod # If the higher layer has a modulated group
-        self.v = [nn.Conv2d(feature_in, feature_out, kernel_size, stride=1, padding='same'), nn.Conv1d(feature_in, feature_out, 1, stride=1, padding='same')]
-        self.t = [nn.Conv2d(feature_in, feature_out, kernel_size, stride=1, padding='same', bias=False), nn.Conv1d(feature_in, feature_out, 1, stride=1, padding='same', bias=False)]
+        self.v = [nn.Conv2d(feature_in, feature_out, kernel_size, stride=1, padding='same', bias=False), nn.Conv1d(feature_in, feature_out, 1, stride=1, padding='same', bias=False)]
+        self.t = [nn.Conv2d(feature_in, feature_out, kernel_size, stride=1, padding='same', bias=True), nn.Conv1d(feature_in, feature_out, 1, stride=1, padding='same', bias=True)]
         if has_Ymod:
-            self.u = [nn.Conv2d(feature_out, feature_out, kernel_size, stride=1, padding='same'), nn.Conv1d(feature_out, feature_out, 1, stride=1, padding='same')]
+            self.u = [nn.Conv2d(feature_out, feature_out, kernel_size, stride=1, padding='same', bias=False), nn.Conv1d(feature_out, feature_out, 1, stride=1, padding='same', bias=False)]
             if upper_ymod:
                 self.umod = [nn.Conv2d(feature_out, feature_out, kernel_size, stride=1, padding='same', bias=False), nn.Conv1d(feature_out, feature_out, 1, stride=1, padding='same', bias=False)]
 
         # Initializing weights
-        self.init_weights(self.v[0])
+        self.init_weights(self.v[0],FB=False)
         self.init_weights(self.v[1], disk=True)
-        self.init_weights(self.t[0])
+        self.init_weights(self.t[0],FB=False)
         self.init_weights(self.t[1], disk=True)
         if has_Ymod:
             self.init_weights(self.u[0])
@@ -173,38 +176,47 @@ class HiddenLayer(CustomLayer):
                 self.init_weights(self.umod[1], disk=True)
 
         # Setting the mask to have connections only between neighboours
-        self.vtmask = torch.tensor([[0, 1, 0], [1, 1, 1], [0, 1, 0]], requires_grad=False)
-        self.vtmask = torch.tile(self.vtmask, (feature_out, feature_in, 1, 1))
+        self.vtmask = torch.clone(self.v[0].weight.detach())
+        self.vtmask[self.vtmask != 0] = 1    
         if has_Ymod:
-            self.umask = torch.tensor([[0, 1, 0], [1, 1, 1], [0, 1, 0]], requires_grad=False)
-            self.umask = torch.tile(self.umask, (feature_out, feature_out, 1, 1))
+          self.umask = torch.clone(self.u[0].weight.detach())
+          self.umask[self.umask != 0] = 1    
 
     def forward(self, lower_y=None, lower_ymod=None, upper_y=None, upper_ymod=None, det=False):
-        current_y = self.ActivationFunction(self.v[0](lower_y[0]) + self.t[0](lower_ymod[0]))
-        current_y_disk = self.ActivationFunction(self.v[1](lower_y[1]) + self.t[1](lower_ymod[1]))
+        if self.has_Ymod:
+            current_y = self.ActivationFunction(self.v[0](lower_y[0]))
+            current_y_disk = self.ActivationFunction(self.v[1](lower_y[1]))       
+        else:
+            current_y = self.ActivationFunction(self.v[0](lower_y[0]) + self.t[0](lower_ymod[0]))
+            current_y_disk = self.ActivationFunction(self.v[1](lower_y[1]) + self.t[1](lower_ymod[1]))
         if self.has_Ymod:
             if upper_ymod is not None:
-                current_ymod = self.ActivationFunction((self.u[0](upper_y[0]) + self.umod[0](upper_ymod[0])) * current_y)
-                current_ymod_disk = self.ActivationFunction((self.u[1](upper_y[1]) + self.umod[1](upper_ymod[1])) * current_y_disk)
+                current_ymod = self.ActivationFunction((self.t[0](lower_ymod[0]) + self.umod[0](upper_ymod[0])) * self.MultiFunction(current_y))
+                current_ymod_disk = self.ActivationFunction((self.t[1](lower_ymod[1]) + self.umod[1](upper_ymod[1])) * self.MultiFunction(current_y_disk))
             else:
-                current_ymod = self.ActivationFunction(current_y * self.u[0](upper_y[0]))
-                current_ymod_disk = self.ActivationFunction(current_y_disk * self.u[1](upper_y[1]))
+                current_ymod = self.ActivationFunction(self.MultiFunction(current_y) * (self.u[0](upper_y[0])+self.t[0](lower_ymod[0])))
+                current_ymod_disk = self.ActivationFunction(self.MultiFunction(current_y_disk) * (self.u[1](upper_y[1])+self.t[1](lower_ymod[1])))
             return([current_y, current_y_disk], [current_ymod, current_ymod_disk])
         return([current_y, current_y_disk])
 
     def UpdateLayer(self, upper, z, beta, delta):
         self.v[0] = self.UpdateWeight(self.v[0], upper[0][0], beta, delta, self.vtmask, z[0][0])
-        self.t[0] = self.UpdateWeight(self.t[0], upper[0][0], beta, delta, self.vtmask, z[0][0])
-
         self.v[1] = self.UpdateWeight(self.v[1], upper[0][1], beta, delta, z=z[0][1], average=False)
-        self.t[1] = self.UpdateWeight(self.t[1], upper[0][1], beta, delta, z=z[0][1], average=False)
+        
+        if not self.has_Ymod:
+            self.t[0] = self.UpdateWeight(self.t[0], upper[0][0], beta, delta, self.vtmask, z[0][0])  
+            self.t[1] = self.UpdateWeight(self.t[1], upper[0][1], beta, delta, z=z[0][1], average=False)
 
         if self.has_Ymod:
-            self.u[0] = self.UpdateWeight(self.u[0], upper[1][0], beta, delta, self.umask, z[1][0])
-            self.u[1] = self.UpdateWeight(self.u[1], upper[1][1], beta, delta, z=z[1][1], average=False)
+            self.t[0] = self.UpdateWeight(self.t[0], upper[1][0], beta, delta, self.vtmask, z[1][0])  
+            self.t[1] = self.UpdateWeight(self.t[1], upper[1][1], beta, delta, z=z[1][1], average=False)
+
             if self.upper_ymod:
                 self.umod[0] = self.UpdateWeight(self.umod[0], upper[1][0], beta, delta, self.umask, z[1][0])
                 self.umod[1] = self.UpdateWeight(self.umod[1], upper[1][0], beta, delta, z=z[1][1], average=False)
+            else:
+                self.u[0] = self.UpdateWeight(self.u[0], upper[1][0], beta, delta, self.umask, z[1][0])
+                self.u[1] = self.UpdateWeight(self.u[1], upper[1][1], beta, delta, z=z[1][1], average=False)
 
 
 
