@@ -15,8 +15,7 @@ class Network():
         self.n_input_features = n_input_features
         self.n_hidden_features = 4
 
-        self.controller = 'max-boltzmann'
-        self.exploit_prob = 0.95
+        self.exploitation_probability = 0.95
 
         self.grid_size = grid_size
 
@@ -26,7 +25,7 @@ class Network():
         self.output_layer = OutputLayer(self.n_hidden_features, self.n_input_features, 1,self.grid_size)
         self.horizontal = HorizLayer(self.n_input_features, self.grid_size)
 
-        self.dosave = False
+        self.save_activities = False
         
         self.saveX = []
         self.saveXmod = []
@@ -40,10 +39,11 @@ class Network():
         self.saveY1_disk = []
         self.saveY1mod_disk = []
         self.saveY2_disk = []
+        self.saveQ_disk = []
         
     def doStep(self, input_env, reward, reset_traces, device):
 
-        if self.dosave:
+        if self.save_activities:
             self.saveX.append([])
             self.saveXmod.append([])
             self.saveY1.append([])
@@ -56,6 +56,7 @@ class Network():
             self.saveY1_disk.append([])
             self.saveY1mod_disk.append([])
             self.saveY2_disk.append([])
+            self.saveQ_disk.append([])
 
         self.Xmod = torch.zeros(1, self.n_input_features, self.grid_size, self.grid_size, device=device)
         self.Xmod_disk = torch.zeros(1, self.n_input_features, 2, device=device)
@@ -75,12 +76,12 @@ class Network():
 
             [XmodHoriz, Xmod_diskHoriz] = self.horizontal.forward(self.Xmod, self.Xmod_disk)
             ([self.X, self.X_disk], [self.Xmod, self.Xmod_disk]) = self.input_layer.forward([self.Y1, self.Y1_disk], [self.Y1mod, self.Y1mod_disk], input_env)
-            self.Xmod = self.input_layer.MyRelu((self.Xmod + XmodHoriz) * self.X)
-            self.Xmod_disk = self.input_layer.MyRelu((self.Xmod_disk + Xmod_diskHoriz) * self.X_disk)
+            self.Xmod = self.input_layer.ActivationFunction((self.Xmod + XmodHoriz) * self.X)
+            self.Xmod_disk = self.input_layer.ActivationFunction((self.Xmod_disk + Xmod_diskHoriz) * self.X_disk)
             ([self.Y1, self.Y1_disk], [self.Y1mod, self.Y1mod_disk]) = self.hidden_layer_1.forward(lower_y=[self.X, self.X_disk], lower_ymod=[self.Xmod, self.Xmod_disk], upper_y=[self.Y2, self.Y2_disk])
             [self.Y2, self.Y2_disk] = self.hidden_layer_2.forward(lower_y=[self.Y1, self.Y1_disk], lower_ymod=[self.Y1mod, self.Y1mod_disk])
 
-            if self.dosave:
+            if self.save_activities:
                 self.saveX[len(self.saveX) - 1].append(self.X.detach())
                 self.saveXmod[len(self.saveXmod) - 1].append(self.Xmod.detach())
                 self.saveY1[len(self.saveY1) - 1].append(self.Y1.detach())
@@ -98,7 +99,7 @@ class Network():
                 self.saveQ_disk[len(self.saveQ_disk) - 1].append(self.Z_disk.detach())
 
             with torch.no_grad():
-                norm = torch.linalg.norm(self.Y1[0, -1, :]-prevY1[0, -1, :], ord=float('inf'))
+                norm = torch.linalg.norm(self.Y1[0, :]-prevY1[0, :])
 
             i += 1
 
@@ -108,15 +109,16 @@ class Network():
 
         [XmodHoriz, Xmod_diskHoriz] = self.horizontal.forward(self.Xmod, self.Xmod_disk)
         ([self.X, self.X_disk], [self.Xmod, self.Xmod_disk]) = self.input_layer.forward([self.Y1, self.Y1_disk], [self.Y1mod, self.Y1mod_disk], input_env)
-        self.Xmod = self.input_layer.MyRelu((self.Xmod + XmodHoriz) * self.X)
-        self.Xmod_disk = self.input_layer.MyRelu((self.Xmod_disk + Xmod_diskHoriz) * self.X_disk)
+        self.Xmod = self.input_layer.ActivationFunction((self.Xmod + XmodHoriz) * self.X)
+        self.Xmod_disk = self.input_layer.ActivationFunction((self.Xmod_disk + Xmod_diskHoriz) * self.X_disk)
         ([self.Y1, self.Y1_disk], [self.Y1mod, self.Y1mod_disk]) = self.hidden_layer_1.forward(lower_y=[self.X, self.X_disk], lower_ymod=[self.Xmod, self.Xmod_disk], upper_y=[self.Y2, self.Y2_disk])
         [self.Y2, self.Y2_disk] = self.hidden_layer_2.forward(lower_y=[self.Y1, self.Y1_disk], lower_ymod=[self.Y1mod, self.Y1mod_disk])
 
         self.Z, self.Z_disk = self.calc_Output(device)
 
-        if self.dosave:
+        if self.save_activities:
             self.saveQ[len(self.saveQ) - 1].append(self.Z.detach())
+            self.saveQ_disk[len(self.saveQ_disk) - 1].append(self.Z_disk.detach())
 
         with torch.no_grad():
             action_chosen = torch.zeros((1, 1, 2+self.grid_size**2))
@@ -130,26 +132,21 @@ class Network():
         with torch.no_grad():
             ZZ = torch.cat((Z_disk, torch.flatten(Z.permute(0,1,3,2), start_dim=2)), dim=2) #Flatten in F order beause everything is in F order
 
-            if self.controller == 'max-boltzmann':
-                if np.random.rand() < self.exploit_prob:
-                    winner = self.calc_maxQ(ZZ)
-                else:
-                    ZZint = ZZ.detach()
-                    ZZint -= torch.max(ZZint)
-                    ZZint = torch.exp(ZZint) / torch.sum(torch.exp(ZZint))
-                    winner = self.calc_softWTA(ZZint, device)
+            if np.random.rand() < self.exploitation_probability:
+                winner = self.calc_maxQ(ZZ)
             else:
-                raise Exception("Wrong controller")
-            self.index_selected = winner
+                ZZint = ZZ.detach()
+                ZZint -= torch.max(ZZint)
+                ZZint = torch.exp(ZZint) / torch.sum(torch.exp(ZZint))
+                winner = self.calc_softWTA(ZZint, device)
+            self.index_selected = winner # index_selected represents the index of the action chosen on a flattened grid
             if winner < 2:  # disk
                 winner = [torch.tensor([0]), torch.tensor([0]), torch.tensor([winner])]
                 self.winner_disk = True
             else:  # grid
                 winner = [torch.tensor([0]), torch.tensor([0]), torch.tensor([(winner-2)%self.grid_size]), torch.tensor([torch.div(winner-2,self.grid_size,rounding_mode='floor')])]
                 self.winner_disk = False
-
-            #winner = [torch.tensor([0]),torch.tensor([0]),torch.tensor([2]),torch.tensor([2])]
-            self.action = winner
+            self.action = winner # action represents the coordinates of the action chosen
 
         return Z, Z_disk
 
@@ -157,7 +154,7 @@ class Network():
         winner = torch.where(Z == torch.max(Z))[-1]
         # Break ties randomly
         if len(winner) > 1:
-            tiebreak = torch.randint(0, len(winner), (1,))
+            tiebreak = winner[torch.randint(0, len(winner), (1,))]
             winner = tiebreak
         return winner
 

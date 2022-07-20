@@ -12,18 +12,19 @@ import torch.nn as nn
 class CustomLayer(nn.Module):
 
     def __init__(self):
+        self.initialisation_range = 0.1
         super().__init__()
 
-    def MyRelu(self, x):
+    def ActivationFunction(self, x):
         thresh = 6
         x[x == 0] = 0
         x = torch.clamp(x, 0)
         x[thresh <= x] = torch.log(1.5 * x[thresh <= x] + 1) + thresh - torch.log(torch.tensor(1.5 * thresh + 1))
         return x
 
-    def AverageTraces(self, traces, mask, diag=None):
+    def AverageTraces(self, traces, mask):
         traces *= mask
-        if self.LayerType != "output" or diag is True:
+        if self.LayerType != "output":
             m = torch.mean(traces[:, :, [0, 1, 1, 2], [1, 0, 2, 1]], axis=2)
             m = m[:, :, None]
             traces[:, :, [0, 1, 1, 2], [1, 0, 2, 1]] = m
@@ -34,47 +35,50 @@ class CustomLayer(nn.Module):
             traces[:, :, intermmask == 1] = m.T
         return(traces)
 
-    def init_weights(self, layer, diag=None, disk=False):
-        K = torch.zeros(layer.weight.shape)
+    def init_weights(self, layer, disk=False):
+        kernel = torch.zeros(layer.weight.shape)
         if layer.bias is not None:
-            b = torch.zeros(layer.bias.shape)
-        for f in range(K.shape[0]):
-            for f2 in range(K.shape[1]):
+            bias = torch.zeros(layer.bias.shape)
+        for f in range(kernel.shape[0]):
+            for f2 in range(kernel.shape[1]):
                 if not disk:
                     if self.LayerType != "output":
-                        K[f, f2, 1, 1] = 0.1 * np.random.rand()
-                        K[f, f2, [0, 1, 1, 2], [1, 0, 2, 1]] = 0.1 * np.random.rand()
+                        ################REMOVE THE LOOP WITH A RANDOM TORCH OF THE CORRECT SHAPE
+                        kernel[f, f2, 1, 1] = self.initialisation_range * np.random.rand()
+                        kernel[f, f2, [0, 1, 1, 2], [1, 0, 2, 1]] = self.initialisation_range * np.random.rand()
                     else:
-                        if diag is not None:
-                            K[f, f2, 1, 1] = 0.1 * np.random.rand()
-                        else:
-                            K[f, f2, :, :] = - 0.1 * np.random.rand() * torch.ones((K.shape[2], K.shape[3])) / 100
-                            K[f, f2, self.grid_size - 1, self.grid_size - 1] = 0.1 * np.random.rand()
+                        kernel[f, f2, :, :] = - 0.1 * np.random.rand() * torch.ones((kernel.shape[2], kernel.shape[3])) / 100
+                        kernel[f, f2, self.grid_size - 1, self.grid_size - 1] = self.initialisation_range * np.random.rand()
                 else:
-                    K[f, f2, 0] = 0.1 * np.random.rand()
+                    kernel[f, f2, 0] = self.initialisation_range * np.random.rand()
             if layer.bias is not None:
-                b[f] = 0.1 * np.random.rand()
-        layer.weight = torch.nn.Parameter(K)
+                bias[f] = 0.1 * np.random.rand()
+        layer.weight = torch.nn.Parameter(kernel)
         if layer.bias is not None:
-            layer.bias = torch.nn.Parameter(b)
+            layer.bias = torch.nn.Parameter(bias)
 
-    def UpdateWeight(self, layer, upper, beta, delta, mask=None, z=None, diag=None, average=True):
+    def UpdateWeight(self, layer, upper, beta, delta, mask=None, z=None, average=True):
         with torch.no_grad():
+            
+            # Getting the derivative of the output unit with respect to the 
+            # weight and bias
             if layer.bias is not None:
-                trace = torch.autograd.grad(upper, [layer.weight, layer.bias], grad_outputs=z, retain_graph=True, allow_unused=True)
-                bias_traces = trace[1]
-                bias_traces = torch.clamp(bias_traces, None, 1)
-                bias_traces[:] = torch.mean(bias_traces)
+                delta_weight = torch.autograd.grad(upper, [layer.weight, layer.bias], grad_outputs=z, retain_graph=True, allow_unused=True)
+                delta_bias = delta_weight[1]
+                delta_bias = torch.clamp(delta_bias, None, 1)
+                delta_bias[:] = torch.mean(delta_bias)
             else:
-                trace = torch.autograd.grad(upper, layer.weight, grad_outputs=z, retain_graph=True, allow_unused=True)
-            weight_traces = trace[0]
-            weight_traces = torch.clamp(weight_traces, None, 1)
+                delta_weight = torch.autograd.grad(upper, layer.weight, grad_outputs=z, retain_graph=True, allow_unused=True)
+            delta_weight = delta_weight[0]
+            delta_weight = torch.clamp(delta_weight, None, 1)
+            
+            # Averaging the weight and bias and updating the weights with RPE
             if average:
-                weight_traces = self.AverageTraces(weight_traces, mask, diag)
-            weight_update = layer.weight + beta * delta * weight_traces
+                delta_weight = self.AverageTraces(delta_weight, mask)
+            weight_update = layer.weight + beta * delta * delta_weight
             layer.weight.copy_(weight_update)
             if layer.bias is not None:
-                bias_update = layer.bias + beta * delta * bias_traces  # / 49
+                bias_update = layer.bias + beta * delta * delta_bias
                 layer.bias.copy_(bias_update)
         return(layer)
 
@@ -98,6 +102,47 @@ class CustomLayer(nn.Module):
                 self.skip[i].to(device)
                 self.wmask = self.wmask.to(device)
                 self.skipmask = self.skipmask.to(device)
+                
+                
+class InputLayer(CustomLayer):
+
+    def __init__(self, feature_in, feature_out):
+        super().__init__()
+        self.LayerType = 'input'
+        kernel_size = 3
+        
+        # First element is grid to grid, second element is disk to disk
+        self.u = [nn.Conv2d(feature_out, feature_in, kernel_size, stride=1, padding='same'), nn.Conv1d(feature_out, feature_in, 1, stride=1, padding='same')]
+        self.umod = [nn.Conv2d(feature_out, feature_in, kernel_size, stride=1, padding='same', bias=False), nn.Conv1d(feature_out, feature_in, 1, stride=1, padding='same', bias=False)]
+
+        # Initializing weights
+        self.init_weights(self.u[0])
+        self.init_weights(self.umod[0])
+
+        self.init_weights(self.u[1], disk=True)
+        self.init_weights(self.umod[1], disk=True)
+
+        # Setting the mask to have connections only between neighboours
+        self.umask = torch.tensor([[0, 1, 0], [1, 1, 1], [0, 1, 0]], requires_grad=False)
+        self.umask = torch.tile(self.umask, (feature_in, feature_out, 1, 1))
+
+    def forward(self, upper_y, upper_ymod, input):
+        Y = input[0]
+        Y_disk = input[1]
+        
+        Ymod = self.u[0](upper_y[0]) + self.umod[0](upper_ymod[0])
+        Ymod_disk = self.u[1](upper_y[1]) + self.umod[1](upper_ymod[1])
+
+        return([Y, Y_disk], [Ymod, Ymod_disk])
+
+    def UpdateLayer(self, upper, z, beta, delta):
+        self.u[0] = self.UpdateWeight(self.u[0], upper[0], beta, delta, self.umask, z[0])
+        self.umod[0] = self.UpdateWeight(self.umod[0], upper[0], beta, delta, self.umask, z[0])
+
+        self.u[1] = self.UpdateWeight(self.u[1], upper[1], beta, delta, z=z[1], average=False)
+        self.umod[1] = self.UpdateWeight(self.umod[1], upper[1], beta, delta, z=z[1], average=False)
+
+
 
 
 class HiddenLayer(CustomLayer):
@@ -106,8 +151,8 @@ class HiddenLayer(CustomLayer):
         super().__init__()
         kernel_size = 3
         self.LayerType = 'hidden'
-        self.has_Ymod = has_Ymod
-        self.upper_ymod = upper_ymod
+        self.has_Ymod = has_Ymod # If the layer has a modulated group
+        self.upper_ymod = upper_ymod # If the higher layer has a modulated group
         self.v = [nn.Conv2d(feature_in, feature_out, kernel_size, stride=1, padding='same'), nn.Conv1d(feature_in, feature_out, 1, stride=1, padding='same')]
         self.t = [nn.Conv2d(feature_in, feature_out, kernel_size, stride=1, padding='same', bias=False), nn.Conv1d(feature_in, feature_out, 1, stride=1, padding='same', bias=False)]
         if has_Ymod:
@@ -128,12 +173,6 @@ class HiddenLayer(CustomLayer):
                 self.init_weights(self.umod[1], disk=True)
 
         # Setting the mask to have connections only between neighboours
-        #self.vtmask = torch.tensor([[0,4/168,0],[4/168,1/49,4/168],[0,4/168,0]],requires_grad = False)
-        #self.vtmask = torch.tile(self.vtmask,(feature_out,feature_in,1,1))
-        # if has_Ymod:
-        #  self.umask = torch.tensor([[0,4/168,0],[4/168,1/49,4/168],[0,4/168,0]],requires_grad = False)
-        #  self.umask = torch.tile(self.umask,(feature_out,feature_out,1,1))
-
         self.vtmask = torch.tensor([[0, 1, 0], [1, 1, 1], [0, 1, 0]], requires_grad=False)
         self.vtmask = torch.tile(self.vtmask, (feature_out, feature_in, 1, 1))
         if has_Ymod:
@@ -141,15 +180,15 @@ class HiddenLayer(CustomLayer):
             self.umask = torch.tile(self.umask, (feature_out, feature_out, 1, 1))
 
     def forward(self, lower_y=None, lower_ymod=None, upper_y=None, upper_ymod=None, det=False):
-        current_y = self.MyRelu(self.v[0](lower_y[0]) + self.t[0](lower_ymod[0]))
-        current_y_disk = self.MyRelu(self.v[1](lower_y[1]) + self.t[1](lower_ymod[1]))
+        current_y = self.ActivationFunction(self.v[0](lower_y[0]) + self.t[0](lower_ymod[0]))
+        current_y_disk = self.ActivationFunction(self.v[1](lower_y[1]) + self.t[1](lower_ymod[1]))
         if self.has_Ymod:
             if upper_ymod is not None:
-                current_ymod = self.MyRelu((self.u[0](upper_y[0]) + self.umod[0](upper_ymod[0])) * current_y)
-                current_ymod_disk = self.MyRelu((self.u[1](upper_y[1]) + self.umod[1](upper_ymod[1])) * current_y_disk)
+                current_ymod = self.ActivationFunction((self.u[0](upper_y[0]) + self.umod[0](upper_ymod[0])) * current_y)
+                current_ymod_disk = self.ActivationFunction((self.u[1](upper_y[1]) + self.umod[1](upper_ymod[1])) * current_y_disk)
             else:
-                current_ymod = self.MyRelu(current_y * self.u[0](upper_y[0]))
-                current_ymod_disk = self.MyRelu(current_y_disk * self.u[1](upper_y[1]))
+                current_ymod = self.ActivationFunction(current_y * self.u[0](upper_y[0]))
+                current_ymod_disk = self.ActivationFunction(current_y_disk * self.u[1](upper_y[1]))
             return([current_y, current_y_disk], [current_ymod, current_ymod_disk])
         return([current_y, current_y_disk])
 
@@ -165,47 +204,8 @@ class HiddenLayer(CustomLayer):
             self.u[1] = self.UpdateWeight(self.u[1], upper[1][1], beta, delta, z=z[1][1], average=False)
             if self.upper_ymod:
                 self.umod[0] = self.UpdateWeight(self.umod[0], upper[1][0], beta, delta, self.umask, z[1][0])
-                self.umod[1] = self.UpdateWeight(self.umod[1][1], upper[1], beta, delta, z=z[1][1], average=False)
+                self.umod[1] = self.UpdateWeight(self.umod[1], upper[1][0], beta, delta, z=z[1][1], average=False)
 
-
-class InputLayer(CustomLayer):
-
-    def __init__(self, feature_in, feature_out):
-        super().__init__()
-        self.LayerType = 'input'
-        kernel_size = 3
-        self.u = [nn.Conv2d(feature_out, feature_in, kernel_size, stride=1, padding='same'), nn.Conv1d(feature_out, feature_in, 1, stride=1, padding='same')]
-        self.umod = [nn.Conv2d(feature_out, feature_in, kernel_size, stride=1, padding='same', bias=False), nn.Conv1d(feature_out, feature_in, 1, stride=1, padding='same', bias=False)]
-
-        # Initializing weights
-        self.init_weights(self.u[0])
-        self.init_weights(self.umod[0])
-
-        self.init_weights(self.u[1], disk=True)
-        self.init_weights(self.umod[1], disk=True)
-
-        # Setting the mask to have connections only between neighboours
-        #self.umask = torch.tensor([[0,4/168,0],[4/168,1/49,4/168],[0,4/168,0]],requires_grad = False)
-        self.umask = torch.tensor([[0, 1, 0], [1, 1, 1], [0, 1, 0]], requires_grad=False)
-        self.umask = torch.tile(self.umask, (feature_in, feature_out, 1, 1))
-
-    def forward(self, upper_y, upper_ymod, input):
-        Y = input[0]
-        Y_disk = input[1]
-        Ymod = self.u[0](upper_y[0]) + self.umod[0](upper_ymod[0])
-        #Ymod = self.MyRelu(Ymod * Y[0])
-
-        Ymod_disk = self.u[1](upper_y[1]) + self.umod[1](upper_ymod[1])
-        #Ymod_disk = self.MyRelu(Ymod_disk * Y_disk)
-
-        return([Y, Y_disk], [Ymod, Ymod_disk])
-
-    def UpdateLayer(self, upper, z, beta, delta):
-        self.u[0] = self.UpdateWeight(self.u[0], upper[0], beta, delta, self.umask, z[0])
-        self.umod[0] = self.UpdateWeight(self.umod[0], upper[0], beta, delta, self.umask, z[0])
-
-        self.u[1] = self.UpdateWeight(self.u[1], upper[1], beta, delta, z=z[1], average=False)
-        self.umod[1] = self.UpdateWeight(self.umod[1], upper[1], beta, delta, z=z[1], average=False)
 
 
 class OutputLayer(CustomLayer):
@@ -218,8 +218,7 @@ class OutputLayer(CustomLayer):
         self.w = [nn.Conv2d(hidden_features, feature_out, kernel_size, stride=1, padding='same'), nn.Conv1d(hidden_features, feature_out, 1, stride=1, padding='same')]
         self.skip = [nn.Conv2d(input_features, feature_out, 1, stride=1, padding='same', bias=False), nn.Conv1d(input_features, feature_out, 1, stride=1, padding='same', bias=False)]
 
-        self.wmask = (1/14) * torch.ones_like(self.w[0].weight)  # In numpy we do the average over 49*49-49 = 2352 whereas here over 13*13 -1 = 168 so we have to divide by 14 (number of strides)
-        #self.wmask = torch.ones_like(self.w[0].weight,requires_grad = False)
+        self.wmask = (1/14) * torch.ones_like(self.w[0].weight)
         self.wmask[:, :, self.grid_size - 1, self.grid_size - 1] = 1/50
 
         # Initializing weights
@@ -250,14 +249,14 @@ class HorizLayer(CustomLayer):
         self.grid_size = grid_size
         self.features = features
         self.LayerType = 'horizontal'
-        self.weight_GridToDisk = torch.nn.Parameter(0.1 * torch.rand((features, 1)))
-        self.weight_DiskToGrid = torch.nn.Parameter(0.1 * torch.rand((features, 1)))
+        self.weight_GridToDisk = torch.nn.Parameter(self.initialisation_range * torch.rand((features, 1)))
+        self.weight_DiskToGrid = torch.nn.Parameter(self.initialisation_range * torch.rand((features, 1)))
         self.weight_GridToGrid = torch.ones((1, features, grid_size, grid_size))
         self.weight_DiskToDisk = torch.ones((1, features, 2))
 
         for i in range(features):
-            self.weight_GridToGrid[0, i, :, :] *= 0.1 * np.random.rand() * torch.eye(self.grid_size)
-            self.weight_DiskToDisk[0, i, :] *= 0.1 * np.random.rand()
+            self.weight_GridToGrid[0, i, :, :] *= self.initialisation_range * np.random.rand() * torch.eye(self.grid_size)
+            self.weight_DiskToDisk[0, i, :] *= self.initialisation_range * np.random.rand()
 
         self.weight_GridToGrid = torch.nn.Parameter(self.weight_GridToGrid)
         self.weight_DiskToDisk = torch.nn.Parameter(self.weight_DiskToDisk)

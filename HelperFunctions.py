@@ -10,8 +10,8 @@ import scipy.interpolate
 from scipy.ndimage.filters import uniform_filter1d
 
 def RunTrials(t,CurveLength,TrialNumber,n,device,verbose=True):
-    n.exploit_prob = 1
-    n.dosave = True
+    n.exploitation_probability = 1
+    n.save_activities = True
     corrects = []
     target_history = []
     distr_history = []
@@ -40,7 +40,7 @@ def RunTrials(t,CurveLength,TrialNumber,n,device,verbose=True):
       i=0
       new_input, reward, trialEnd= t.doStep(action)
       feature_history.append(t.feature_target) 
-      position_history.append(t.position)
+      position_history.append(t.position_markers)
       while trial_running:
         action = n.doStep(new_input,reward,trialEnd,device)
         new_input, reward, trialEnd = t.doStep(action)
@@ -52,16 +52,17 @@ def RunTrials(t,CurveLength,TrialNumber,n,device,verbose=True):
           else:
             corrects.append(1)
         i = i + 1
-      target_history.append(t.trialTarget)
-      distr_history.append(t.trialDistr) 
+      target_history.append(t.target_curve)
+      distr_history.append(t.distractor_curve) 
     if verbose:
         print(np.mean(corrects))
     return(n,corrects,feature_history,target_history,distr_history,position_history,display)  
 
 
 def open_base(filename):
-    with open(filename+'.pkl', 'rb') as input:
-      networks_base = pickle.load(input)
+    input = open(filename+'.pkl', 'rb')
+    networks_base = pickle.load(input)
+    input.close()
     return networks_base
 
 
@@ -126,6 +127,9 @@ def latency_operation(TD,operation,TASK,CurveLength,number_interpolation_points=
         position_on_curve = 0 #in the search then trace task, the trace follows the search
     elif operation == 'trace' and TASK == 'tracesearch':
         position_on_curve = CurveLength - 1 #in the trace then searcg task, the trace precedes the search
+    elif TASK == 'trace':
+        position_on_curve = position_on_curve
+        
     
     #Interpolating the response curve to have non-integer latency of modulation   
     normalized_TD = TD[neurons,:,:,position_on_curve,:]/np.expand_dims(np.max(np.abs(TD[neurons,:,:,position_on_curve,:]),axis = -1),axis=-1)
@@ -142,13 +146,16 @@ def latency_operation(TD,operation,TASK,CurveLength,number_interpolation_points=
     latency = np.nanargmin(smoothed_interpolated_normalized_TD[:,:,:,::-1]>condition,axis=-1)
     latency = latency.astype('float')
     latency = 499 - latency
-    
+
     #Removing recording site with non-positive mor non monotonous modulation
     latency[np.isnan(smoothed_interpolated_normalized_TD[:,:,:,0])] = np.nan
-    
-    latency[smoothed_interpolated_normalized_TD[:,:,:,-1] < 0.5] = np.nan
-    latency[smoothed_interpolated_normalized_TD[:,:,:,0]>=0.5] = np.nan
-    latency[np.abs(np.max(smoothed_interpolated_normalized_TD,axis=-1)-np.min(smoothed_interpolated_normalized_TD,axis=-1)) < 0.05] = np.nan #constant modulation
+    if not ((operation == 'search' and TASK == 'searchtrace') or TASK=='trace'): #in the search trace operation for operation search only one marker is active so the initial activity will necessarily be greater than 0
+        latency[smoothed_interpolated_normalized_TD[:,:,:,0] < -0.02] = np.nan
+        latency[smoothed_interpolated_normalized_TD[:,:,:,0] > 0.02] = np.nan
+    latency[smoothed_interpolated_normalized_TD[:,:,:,-1] < 0.5] = np.nan #modulation at the end is lower than half of the max
+    latency[smoothed_interpolated_normalized_TD[:,:,:,0]>=0.5] = np.nan #modulation at the beggining is greater than half of the max
+    latency[np.abs(np.
+                   max(smoothed_interpolated_normalized_TD,axis=-1)-np.min(smoothed_interpolated_normalized_TD,axis=-1)) < 0.05] = np.nan #constant modulation
     latency[np.max(smoothed_interpolated_normalized_TD,axis=-1)<=0] = np.nan #modulation is negative
     latency[smoothed_interpolated_normalized_TD[:,:,:,-1] < smoothed_interpolated_normalized_TD[:,:,:,0]] = np.nan #modulation at the beginning is greater than at the end
 
@@ -159,6 +166,7 @@ def latency_operation(TD,operation,TASK,CurveLength,number_interpolation_points=
     latency = np.linspace(0, dur-1, num=number_interpolation_points)[latency] 
     
     return latency
+
 
 
     

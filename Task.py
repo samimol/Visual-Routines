@@ -17,86 +17,72 @@ class Task():
         self.grid_size = 20
 
         self.state = 0
-        self.counter = 0
-        self.trialEnd = False
+        self.trial_ended = False
 
-        self.onlytrace = True
+        self.only_trace_curve = True # For the first part of the training of the trace then search task, we only do the curve tracing task
 
         self.state = 'intertrial'
 
-        self.onlyblue = True
+        self.no_curves = True # First part of the curicculum is no curve, only the fixation point and a blue pixel
 
-        self.cur_reward = 0
-        self.fix_reward = 0.2
-        self.fin_reward = 1.5
+        self.current_reward = 0
+        self.final_reward = 1.5
         
-        self.intertrial_dur = 0
         
         self.n_hidden_features = n_hidden_features
-        
-        self.targ_display = torch.zeros((1, self.n_hidden_features, self.grid_size, self.grid_size))
-        self.targ_display_disk = torch.zeros((1, self.n_hidden_features, 2))
 
         self.flowcontrol = {'intertrial': self.do_intertrial,
                             'go': self.do_go}
 
-        if self.tasktype != 'searchtrace' and self.tasktype != 'trace' and self.tasktype != 'tracesearch':
+        if self.task_type != 'searchtrace' and self.task_type != 'trace' and self.task_type != 'tracesearch':
             raise Exception('Task type must be either searchtrace or trace or tracesearch')
 
     def stateReset(self):
-        self.trialEnd = True
-        self.counter = 0
+        self.trial_ended = True
         self.state = 'intertrial'
-        self.nwInput = [self.target_display, self.target_display_disk]
+        self.input = [self.display, self.display_disk]
 
     def doStep(self, action):
-        self.trialEnd = False
+        self.trial_ended = False
         self.flowcontrol[self.state](action)
-        reward = self.cur_reward
-        nwInput = self.nwInput
-        trialEnd = self.trialEnd
-        self.cur_reward = 0
-        return(nwInput, reward, trialEnd)
+        reward = self.current_reward
+        input = self.input
+        trial_ended = self.trial_ended
+        self.current_reward = 0
+        return(input, reward, trial_ended)
 
     def do_intertrial(self, action):
-        if self.counter == self.intertrial_dur:
             self.pickTrialType()
-            self.nwInput = [self.target_display, self.target_display_disk]
+            self.input = [self.display, self.display_disk]
             self.state = 'go'
-            self.counter = 0
-        else:
-            self.counter = self.counter + 1
+
 
     def do_go(self, action):
-        # Only the last saccade, see matlab for step by step tracing
-        if self.counter <= 0:
-            if (self.tasktype == 'tracesearch' and self.onlytrace is False):
-                cond = torch.where(action == 1)[-1]
+            if (self.task_type == 'tracesearch' and self.only_trace_curve is False):
+                pixel_chosen = torch.where(action == 1)[-1]
             else:
-                cond = torch.where(action == 1)[-1] - 2
-            if cond == self.trialTarget[-1] and (self.counter >= 0 or self.force_wait == 0):
-                self.cur_reward = self.cur_reward + self.fin_reward * 0.8
+                pixel_chosen = torch.where(action == 1)[-1] - 2
+            if pixel_chosen == self.target_curve[-1]:
+                self.current_reward = self.current_reward + self.final_reward * 0.8
                 self.stateReset()
             else:
                 self.stateReset()
-        else:
-            self.stateReset()
 
     def pickTrialType(self):
-        positionRed = np.random.randint(2)
-        positionYellow = 1 if positionRed == 0 else 0
-        self.position = [positionRed, positionYellow]
+        position_red_marker = np.random.randint(2)
+        position_yellow_marker = 1 if position_red_marker == 0 else 0
+        self.position_markers = [position_red_marker, position_yellow_marker]
         self.feature_target = np.random.randint(2) 
         curve1,curve2 = self.PickCurve()
         self.DrawStimulus(curve1,curve2)
         
     def PickCurve(self):
-        if self.onlyblue:
-            target_pos = np.random.randint(self.grid_size**2)
-            blue_pos = np.random.randint(self.grid_size**2)
-            while blue_pos == target_pos:
-                blue_pos = np.random.randint(self.grid_size**2)
-            curve1 = [target_pos, blue_pos]
+        if self.no_curves:
+            red_yellow_position = np.random.randint(self.grid_size**2)
+            blue_position = np.random.randint(self.grid_size**2)
+            while blue_position == red_yellow_position:  ########CHANGE THAT
+                blue_position = np.random.randint(self.grid_size**2)
+            curve1 = [red_yellow_position, blue_position]
             curve2 = []
         else:
             while True:
@@ -112,174 +98,193 @@ class Task():
     def make_curves(self,curve, mask_original):
         mask = mask_original.copy()
         if len(curve) == 0:
+            # Getting the pixels available
             x, y = np.where(mask == 0)
+            
+            # Chossing a random pixel among the one availables
             ind = np.random.randint(len(x))
             first_elem = x[ind] + y[ind] * self.grid_size
+            
+            #We mask this pixel, and call the function again
             mask[first_elem % self.grid_size, first_elem // self.grid_size] = 1
             curve.append(first_elem)
             return self.make_curves(curve, mask)
         else:
-            xend = curve[-1] % self.grid_size
-            yend = curve[-1] // self.grid_size
-            consecutivesx = [xend - 1, xend + 1]
-            consecutivesx = [i for i in consecutivesx if i >= 0 and i < self.grid_size]
-            consecutivesy = [yend - 1, yend + 1]
-            consecutivesy = [i for i in consecutivesy if i >= 0 and i < self.grid_size]
-            while len(curve) < self.curve_length:  # We append one at the end
+            # We look at the last pixel of the curve and get the coordinate of 
+            # its neihbours
+            x_end = curve[-1] % self.grid_size
+            y_end = curve[-1] // self.grid_size
+            consecutives_x = [x_end - 1, x_end + 1]
+            consecutives_x = [i for i in consecutives_x if i >= 0 and i < self.grid_size]
+            consecutives_y = [y_end - 1, y_end + 1]
+            consecutives_y = [i for i in consecutives_y if i >= 0 and i < self.grid_size]
+            
+            while len(curve) < self.curve_length:  
                 possible_next_value = []
-                for i in range(len(consecutivesx)):
-                    if mask[consecutivesx[i], yend] == 0:
-                        possible_next_value.append((consecutivesx[i], yend))
-                for i in range(len(consecutivesy)):
-                    if mask[xend, consecutivesy[i]] == 0:
-                        possible_next_value.append((xend, consecutivesy[i]))
+                
+                # If a neighbouring pixel is available, we record it as a
+                # a possible value
+                for i in range(len(consecutives_x)):
+                    if mask[consecutives_x[i], y_end] == 0:
+                        possible_next_value.append((consecutives_x[i], y_end))
+                for i in range(len(consecutives_y)):
+                    if mask[x_end, consecutives_y[i]] == 0:
+                        possible_next_value.append((x_end, consecutives_y[i]))
+                
+                # We randomly choose the next pixel among the available ones
+                # and mask the nehbours 
                 next_value = random.choice(possible_next_value)
                 curve.append(next_value[0] + next_value[1] * self.grid_size)
                 for i in range(len(possible_next_value)):
                     mask[possible_next_value[i][0], possible_next_value[i][1]] = 1
                 return self.make_curves(curve, mask)
             else:
-                for i in range(len(consecutivesx)):
-                    mask[consecutivesx[i], yend] = 1
-                for i in range(len(consecutivesy)):
-                    mask[xend, consecutivesy[i]] = 1
+                
+                # If we reached the length of the curve, we only mask the nehbours
+                for i in range(len(consecutives_x)):
+                    mask[consecutives_x[i], y_end] = 1
+                for i in range(len(consecutives_y)):
+                    mask[x_end, consecutives_y[i]] = 1
                 return curve, mask
 
         
 class Trace(Task):
     
     def __init__(self,n_hidden_features):
-        self.tasktype = 'trace'
+        self.task_type = 'trace'
         super().__init__(n_hidden_features)
         
     def DrawStimulus(self,curve1,curve2):
-        targ_display = torch.zeros((1, self.n_hidden_features, self.grid_size, self.grid_size))
-        targ_display_disk = torch.zeros((1, self.n_hidden_features, 2))
-        if self.onlyblue:
-                targ_display[:, 0, curve1[0] % self.grid_size, curve1[0]//self.grid_size] = 1
-                targ_display[:, 3, curve1[1] % self.grid_size, curve1[1]//self.grid_size] = 1
+        display = torch.zeros((1, self.n_hidden_features, self.grid_size, self.grid_size))
+        display_disk = torch.zeros((1, self.n_hidden_features, 2))
+        if self.no_curves:
+                display[:, 0, curve1[0] % self.grid_size, curve1[0]//self.grid_size] = 1
+                display[:, 3, curve1[1] % self.grid_size, curve1[1]//self.grid_size] = 1
         else:
                 for i in range(len(curve1)):
                     if i == 0:  # red
-                        targ_display[:, 0, curve1[0] % self.grid_size, curve1[0]//self.grid_size] = 1
+                        display[:, 0, curve1[0] % self.grid_size, curve1[0]//self.grid_size] = 1
                     elif i == len(curve1)-1:  # blue
-                        targ_display[:, 3, curve1[i] % self.grid_size, curve1[i]//self.grid_size] = 1
+                        display[:, 3, curve1[i] % self.grid_size, curve1[i]//self.grid_size] = 1
                     else:  # green
-                        targ_display[:, 2, curve1[i] % self.grid_size, curve1[i]//self.grid_size] = 1
+                        display[:, 2, curve1[i] % self.grid_size, curve1[i]//self.grid_size] = 1
                 for i in range(len(curve2)):
                     if i == 0:
-                        targ_display[:, 2, curve2[0] % self.grid_size, curve2[0]//self.grid_size] = 1
+                        display[:, 2, curve2[0] % self.grid_size, curve2[0]//self.grid_size] = 1
                     elif i == len(curve2)-1:
-                        targ_display[:, 3, curve2[i] % self.grid_size, curve2[i]//self.grid_size] = 1
+                        display[:, 3, curve2[i] % self.grid_size, curve2[i]//self.grid_size] = 1
                     else:
-                        targ_display[:, 2, curve2[i] % self.grid_size, curve2[i]//self.grid_size] = 1
+                        display[:, 2, curve2[i] % self.grid_size, curve2[i]//self.grid_size] = 1
 
-        self.trialTarget = curve1
-        self.trialDistr = curve2
-        self.target_display = targ_display
-        self.target_display_disk = targ_display_disk     
+        self.target_curve = curve1
+        self.distractor_curve = curve2
+        self.display = display
+        self.display_disk = display_disk     
         
 class SearchTrace(Task):
     
     def __init__(self,n_hidden_features):
-        self.tasktype = 'searchtrace'
+        self.task_type = 'searchtrace'
         super().__init__(n_hidden_features)
         
     def DrawStimulus(self,curve1,curve2):
-        targ_display = torch.zeros((1, self.n_hidden_features, self.grid_size, self.grid_size))
-        targ_display_disk = torch.zeros((1, self.n_hidden_features, 2))
-        if self.onlyblue:
-          targ_display[:, self.feature_target, curve1[0] % self.grid_size, curve1[0]//self.grid_size] = 1
-          targ_display[:, 3, curve1[1] % self.grid_size, curve1[1]//self.grid_size] = 1
-          targ_display_disk[:, self.feature_target, self.position[self.feature_target]] = 1 
+        display = torch.zeros((1, self.n_hidden_features, self.grid_size, self.grid_size))
+        display_disk = torch.zeros((1, self.n_hidden_features, 2))
+        if self.no_curves:
+          display[:, self.feature_target, curve1[0] % self.grid_size, curve1[0]//self.grid_size] = 1
+          display[:, 3, curve1[1] % self.grid_size, curve1[1]//self.grid_size] = 1
+          display_disk[:, self.feature_target, self.position_markers[self.feature_target]] = 1 
         else:
           for i in range(len(curve1)):
               if i == 0:  # red
-                  targ_display[:, 0, curve1[0] % self.grid_size, curve1[0]//self.grid_size] = 1
+                  display[:, 0, curve1[0] % self.grid_size, curve1[0]//self.grid_size] = 1
               elif i == len(curve1)-1:  # blue
-                  targ_display[:, 3, curve1[i] % self.grid_size, curve1[i]//self.grid_size] = 1
+                  display[:, 3, curve1[i] % self.grid_size, curve1[i]//self.grid_size] = 1
               else:  # green
-                  targ_display[:, 2, curve1[i] % self.grid_size, curve1[i]//self.grid_size] = 1
+                  display[:, 2, curve1[i] % self.grid_size, curve1[i]//self.grid_size] = 1
           for i in range(len(curve2)):
               if i == 0:
-                  targ_display[:, 1, curve2[0] % self.grid_size, curve2[0]//self.grid_size] = 1
+                  display[:, 1, curve2[0] % self.grid_size, curve2[0]//self.grid_size] = 1
               elif i == len(curve2)-1:
-                  targ_display[:, 3, curve2[i] % self.grid_size, curve2[i]//self.grid_size] = 1
+                  display[:, 3, curve2[i] % self.grid_size, curve2[i]//self.grid_size] = 1
               else:
-                  targ_display[:, 2, curve2[i] % self.grid_size, curve2[i]//self.grid_size] = 1
-          targ_display_disk[:, self.feature_target, self.position[self.feature_target]] = 1
-        if self.onlyblue:
-            self.trialTarget = curve1
-            self.trialDistr = curve2
+                  display[:, 2, curve2[i] % self.grid_size, curve2[i]//self.grid_size] = 1
+          display_disk[:, self.feature_target, self.position_markers[self.feature_target]] = 1
+        if self.no_curves:
+            self.target_curve = curve1
+            self.distractor_curve = curve2
         else:
             if self.feature_target == 0:
-                self.trialTarget = curve1
-                self.trialDistr = curve2
+                self.target_curve = curve1
+                self.distractor_curve = curve2
             else:
-                self.trialTarget = curve2
-                self.trialDistr = curve1
-        self.target_display = targ_display
-        self.target_display_disk = targ_display_disk
+                self.target_curve = curve2
+                self.distractor_curve = curve1
+        self.display = display
+        self.display_disk = display_disk
         
 class TraceSearch(Task):      
     
     def __init__(self,n_hidden_features):
-        self.tasktype = 'tracesearch'
+        self.task_type = 'tracesearch'
         super().__init__(n_hidden_features)
         
     def DrawStimulus(self,curve1,curve2):
+        
+        # The eye movement target is the red or yellow pixel so we reverse the
+        # curves
         curve1.reverse()
         curve2.reverse()
-        if not self.onlytrace:
-            if self.onlyblue:
-                curve1.append(self.position[self.feature_target])
+        if not self.only_trace_curve:
+            if self.no_curves:
+                curve1.append(self.position_markers[self.feature_target])
             else:
-                curve1.append(self.position[0])
-                curve2.append(self.position[1])       
-        targ_display = torch.zeros((1, self.n_hidden_features, self.grid_size, self.grid_size))
-        targ_display_disk = torch.zeros((1, self.n_hidden_features, 2))
-        if self.onlyblue:
-            targ_display[:, 3, curve1[0] % self.grid_size, curve1[0]//self.grid_size] = 1
-            targ_display[:, self.feature_target, curve1[1] % self.grid_size, curve1[1]//self.grid_size] = 1
-            if not self.onlytrace:
-                targ_display_disk[:, 0, self.position[0]] = 1
-                targ_display_disk[:, 1, self.position[1]] = 1
+                curve1.append(self.position_markers[0])
+                curve2.append(self.position_markers[1])       
+        display = torch.zeros((1, self.n_hidden_features, self.grid_size, self.grid_size))
+        display_disk = torch.zeros((1, self.n_hidden_features, 2))
+        if self.no_curves:
+            display[:, 3, curve1[0] % self.grid_size, curve1[0]//self.grid_size] = 1
+            display[:, self.feature_target, curve1[1] % self.grid_size, curve1[1]//self.grid_size] = 1
+            if not self.only_trace_curve:
+                display_disk[:, 0, self.position_markers[0]] = 1
+                display_disk[:, 1, self.position_markers[1]] = 1
         else:
-            if self.onlytrace:
-                targ_display[:, 0, curve1[len(curve1)-1] % self.grid_size, curve1[len(curve1)-1]//self.grid_size] = 1
-                targ_display[:, 1, curve2[len(curve2)-1] % self.grid_size, curve2[len(curve2)-1]//self.grid_size] = 1
+            if self.only_trace_curve:
+                display[:, 0, curve1[len(curve1)-1] % self.grid_size, curve1[len(curve1)-1]//self.grid_size] = 1
+                display[:, 1, curve2[len(curve2)-1] % self.grid_size, curve2[len(curve2)-1]//self.grid_size] = 1
                 range1 = len(curve1) - 1
                 range2 = len(curve2) - 1
             else:
-                targ_display[:, 0, curve1[len(curve1)-2] % self.grid_size, curve1[len(curve1)-2]//self.grid_size] = 1
-                targ_display[:, 1, curve2[len(curve2)-2] % self.grid_size, curve2[len(curve2)-2]//self.grid_size] = 1
+                display[:, 0, curve1[len(curve1)-2] % self.grid_size, curve1[len(curve1)-2]//self.grid_size] = 1
+                display[:, 1, curve2[len(curve2)-2] % self.grid_size, curve2[len(curve2)-2]//self.grid_size] = 1
                 range1 = len(curve1) - 2
                 range2 = len(curve2) - 2
             for i in range(range1):
-                targ_display[:, 2, curve1[i] % self.grid_size, curve1[i]//self.grid_size] = 1
+                display[:, 2, curve1[i] % self.grid_size, curve1[i]//self.grid_size] = 1
             for i in range(range2):
-                targ_display[:, 2, curve2[i] % self.grid_size, curve2[i]//self.grid_size] = 1
+                display[:, 2, curve2[i] % self.grid_size, curve2[i]//self.grid_size] = 1
             if self.feature_target == 0:
-                targ_display[:, 3, curve1[0] % self.grid_size, curve1[0]//self.grid_size] = 1
-                targ_display[:, 2, curve1[0] % self.grid_size, curve1[0]//self.grid_size] = 0
+                display[:, 3, curve1[0] % self.grid_size, curve1[0]//self.grid_size] = 1
+                display[:, 2, curve1[0] % self.grid_size, curve1[0]//self.grid_size] = 0
             else:
-                targ_display[:, 3, curve2[0] % self.grid_size, curve2[0]//self.grid_size] = 1
-                targ_display[:, 2, curve2[0] % self.grid_size, curve2[0]//self.grid_size] = 0
-            if not self.onlytrace:
-                targ_display_disk[:, 0, self.position[0]] = 1
-                targ_display_disk[:, 1, self.position[1]] = 1
-        if self.onlyblue:
-            self.trialTarget = curve1
-            self.trialDistr = curve2
+                display[:, 3, curve2[0] % self.grid_size, curve2[0]//self.grid_size] = 1
+                display[:, 2, curve2[0] % self.grid_size, curve2[0]//self.grid_size] = 0
+            if not self.only_trace_curve:
+                display_disk[:, 0, self.position_markers[0]] = 1
+                display_disk[:, 1, self.position_markers[1]] = 1
+        if self.no_curves:
+            self.target_curve = curve1
+            self.distractor_curve = curve2
         else:
             if self.feature_target == 0:
-                self.trialTarget = curve1
-                self.trialDistr = curve2
+                self.target_curve = curve1
+                self.distractor_curve = curve2
             else:
-                self.trialTarget = curve2
-                self.trialDistr = curve1
-        self.target_display = targ_display
-        self.target_display_disk = targ_display_disk
+                self.target_curve = curve2
+                self.distractor_curve = curve1
+        self.display = display
+        self.display_disk = display_disk
     
         
     
