@@ -1,3 +1,4 @@
 *.pkl
 *.ipynb
 *.pyc
+.spyproject/config/
