@@ -15,19 +15,19 @@ class CustomLayer(nn.Module):
         self.initialisation_range = 0.1
         super().__init__()
 
-    def ActivationFunction(self, x):
+    def activation_function(self, x):
         thresh = 6
         x[x == 0] = 0
         x = torch.clamp(x, 0)
         x[thresh <= x] = torch.log(1.5 * x[thresh <= x] + 1) + thresh - torch.log(torch.tensor(1.5 * thresh + 1))
         return x
     
-    def MultiFunction(self,x):
+    def gating_function(self,x):
       param = 100
       return param*x/(torch.sqrt(1+(param**2)*(x**2)))
       #return x
 
-    def AverageTraces(self, traces, mask):
+    def average_trace(self, traces, mask):
         traces *= mask
         if self.LayerType != "output":
             m = torch.mean(traces[:, :, [0, 1, 1, 2], [1, 0, 2, 1]], axis=2)
@@ -40,7 +40,7 @@ class CustomLayer(nn.Module):
             traces[:, :, intermmask == 1] = m.T
         return(traces)
 
-    def init_weights(self, layer, disk=False, connections_to_neighbours=True):
+    def initialise_weights(self, layer, disk=False, connections_to_neighbours=True):
         kernel = torch.zeros(layer.weight.shape)
         if layer.bias is not None:
             bias = torch.zeros(layer.bias.shape)
@@ -67,7 +67,7 @@ class CustomLayer(nn.Module):
         if layer.bias is not None:
             layer.bias = torch.nn.Parameter(bias)
 
-    def UpdateWeight(self, layer, upper, beta, delta, mask=None, z=None, average=True):
+    def update_weights(self, layer, upper, beta, delta, mask=None, z=None, average=True):
         with torch.no_grad():
             
             # Getting the derivative of the output unit with respect to the 
@@ -84,7 +84,7 @@ class CustomLayer(nn.Module):
             # Averaging the weight and bias and updating the weights with RPE
             if average:
                 #if self.LayerType == 'output':
-                delta_weight = self.AverageTraces(delta_weight, mask)
+                delta_weight = self.average_trace(delta_weight, mask)
                 #else:
                     #delta_weight = delta_weight*mask
             weight_update = layer.weight + beta * delta * delta_weight
@@ -127,8 +127,8 @@ class InputLayer(CustomLayer):
         self.umod = [nn.Conv2d(feature_out, feature_in, kernel_size, stride=1, padding='same', bias=True), nn.Conv1d(feature_out, feature_in, 1, stride=1, padding='same', bias=True)]
 
         # Initializing weights
-        self.init_weights(self.umod[0])
-        self.init_weights(self.umod[1], disk=True)
+        self.initialise_weights(self.umod[0])
+        self.initialise_weights(self.umod[1], disk=True)
 
         # Setting the mask to have connections only between neighboours
         self.umask = torch.clone(self.umod[0].weight.detach())
@@ -143,9 +143,9 @@ class InputLayer(CustomLayer):
 
         return([Y, Y_disk], [Ymod, Ymod_disk])
 
-    def UpdateLayer(self, upper, z, beta, delta):
-        self.umod[0] = self.UpdateWeight(self.umod[0], upper[0], beta, delta, self.umask, z[0])
-        self.umod[1] = self.UpdateWeight(self.umod[1], upper[1], beta, delta, z=z[1], average=False)
+    def update_layer(self, upper, z, beta, delta):
+        self.umod[0] = self.update_weights(self.umod[0], upper[0], beta, delta, self.umask, z[0])
+        self.umod[1] = self.update_weights(self.umod[1], upper[1], beta, delta, z=z[1], average=False)
 
 
 
@@ -166,16 +166,16 @@ class HiddenLayer(CustomLayer):
                 self.umod = [nn.Conv2d(feature_out, feature_out, kernel_size, stride=1, padding='same', bias=False), nn.Conv1d(feature_out, feature_out, 1, stride=1, padding='same', bias=False)]
 
         # Initializing weights
-        self.init_weights(self.v[0],connections_to_neighbours=False)
-        self.init_weights(self.v[1], disk=True,connections_to_neighbours=False)
-        self.init_weights(self.t[0])
-        self.init_weights(self.t[1], disk=True)
+        self.initialise_weights(self.v[0],connections_to_neighbours=False)
+        self.initialise_weights(self.v[1], disk=True,connections_to_neighbours=False)
+        self.initialise_weights(self.t[0])
+        self.initialise_weights(self.t[1], disk=True)
         if has_Ymod:
-            self.init_weights(self.u[0])
-            self.init_weights(self.u[1], disk=True)
+            self.initialise_weights(self.u[0])
+            self.initialise_weights(self.u[1], disk=True)
             if upper_ymod:
-                self.init_weights(self.umod[0])
-                self.init_weights(self.umod[1], disk=True)
+                self.initialise_weights(self.umod[0])
+                self.initialise_weights(self.umod[1], disk=True)
 
         # Setting the mask to have connections only between neighboours
         self.vmask = torch.clone(self.v[0].weight.detach())
@@ -188,39 +188,39 @@ class HiddenLayer(CustomLayer):
 
     def forward(self, lower_y=None, lower_ymod=None, upper_y=None, upper_ymod=None, det=False):
         if self.has_Ymod:
-            current_y = self.ActivationFunction(self.v[0](lower_y[0]))
-            current_y_disk = self.ActivationFunction(self.v[1](lower_y[1]))       
+            current_y = self.activation_function(self.v[0](lower_y[0]))
+            current_y_disk = self.activation_function(self.v[1](lower_y[1]))       
         else:
-            current_y = self.ActivationFunction(self.v[0](lower_y[0]) + self.t[0](lower_ymod[0]))
-            current_y_disk = self.ActivationFunction(self.v[1](lower_y[1]) + self.t[1](lower_ymod[1]))
+            current_y = self.activation_function(self.v[0](lower_y[0]) + self.t[0](lower_ymod[0]))
+            current_y_disk = self.activation_function(self.v[1](lower_y[1]) + self.t[1](lower_ymod[1]))
         if self.has_Ymod:
             if upper_ymod is not None:
-                current_ymod = self.ActivationFunction((self.t[0](lower_ymod[0]) + self.umod[0](upper_ymod[0])) * self.MultiFunction(current_y))
-                current_ymod_disk = self.ActivationFunction((self.t[1](lower_ymod[1]) + self.umod[1](upper_ymod[1])) * self.MultiFunction(current_y_disk))
+                current_ymod = self.activation_function((self.t[0](lower_ymod[0]) + self.umod[0](upper_ymod[0])) * self.gating_function(current_y))
+                current_ymod_disk = self.activation_function((self.t[1](lower_ymod[1]) + self.umod[1](upper_ymod[1])) * self.gating_function(current_y_disk))
             else:
-                current_ymod = self.ActivationFunction(self.MultiFunction(current_y) * (self.u[0](upper_y[0])+self.t[0](lower_ymod[0])))
-                current_ymod_disk = self.ActivationFunction(self.MultiFunction(current_y_disk) * (self.u[1](upper_y[1])+self.t[1](lower_ymod[1])))
+                current_ymod = self.activation_function(self.gating_function(current_y) * (self.u[0](upper_y[0])+self.t[0](lower_ymod[0])))
+                current_ymod_disk = self.activation_function(self.gating_function(current_y_disk) * (self.u[1](upper_y[1])+self.t[1](lower_ymod[1])))
             return([current_y, current_y_disk], [current_ymod, current_ymod_disk])
         return([current_y, current_y_disk])
 
-    def UpdateLayer(self, upper, z, beta, delta):
-        self.v[0] = self.UpdateWeight(self.v[0], upper[0][0], beta, delta, self.vmask, z[0][0])
-        self.v[1] = self.UpdateWeight(self.v[1], upper[0][1], beta, delta, z=z[0][1], average=False)
+    def update_layer(self, upper, z, beta, delta):
+        self.v[0] = self.update_weights(self.v[0], upper[0][0], beta, delta, self.vmask, z[0][0])
+        self.v[1] = self.update_weights(self.v[1], upper[0][1], beta, delta, z=z[0][1], average=False)
         
         if not self.has_Ymod:
-            self.t[0] = self.UpdateWeight(self.t[0], upper[0][0], beta, delta, self.tmask, z[0][0])  
-            self.t[1] = self.UpdateWeight(self.t[1], upper[0][1], beta, delta, z=z[0][1], average=False)
+            self.t[0] = self.update_weights(self.t[0], upper[0][0], beta, delta, self.tmask, z[0][0])  
+            self.t[1] = self.update_weights(self.t[1], upper[0][1], beta, delta, z=z[0][1], average=False)
 
         if self.has_Ymod:
-            self.t[0] = self.UpdateWeight(self.t[0], upper[1][0], beta, delta, self.tmask, z[1][0])  
-            self.t[1] = self.UpdateWeight(self.t[1], upper[1][1], beta, delta, z=z[1][1], average=False)
+            self.t[0] = self.update_weights(self.t[0], upper[1][0], beta, delta, self.tmask, z[1][0])  
+            self.t[1] = self.update_weights(self.t[1], upper[1][1], beta, delta, z=z[1][1], average=False)
 
             if self.upper_ymod:
-                self.umod[0] = self.UpdateWeight(self.umod[0], upper[1][0], beta, delta, self.umask, z[1][0])
-                self.umod[1] = self.UpdateWeight(self.umod[1], upper[1][0], beta, delta, z=z[1][1], average=False)
+                self.umod[0] = self.update_weights(self.umod[0], upper[1][0], beta, delta, self.umask, z[1][0])
+                self.umod[1] = self.update_weights(self.umod[1], upper[1][0], beta, delta, z=z[1][1], average=False)
             else:
-                self.u[0] = self.UpdateWeight(self.u[0], upper[1][0], beta, delta, self.umask, z[1][0])
-                self.u[1] = self.UpdateWeight(self.u[1], upper[1][1], beta, delta, z=z[1][1], average=False)
+                self.u[0] = self.update_weights(self.u[0], upper[1][0], beta, delta, self.umask, z[1][0])
+                self.u[1] = self.update_weights(self.u[1], upper[1][1], beta, delta, z=z[1][1], average=False)
 
 
 
@@ -238,24 +238,24 @@ class OutputLayer(CustomLayer):
         self.wmask[:, :, self.grid_size - 1, self.grid_size - 1] = 1/50
 
         # Initializing weights
-        self.init_weights(self.w[0],FB=False)
-        self.init_weights(self.skip[0], disk=True,FB=False) #not disk but same structure
+        self.initialise_weights(self.w[0],FB=False)
+        self.initialise_weights(self.skip[0], disk=True,FB=False) #not disk but same structure
 
-        self.init_weights(self.w[1], disk=True,FB=False)
-        self.init_weights(self.skip[1], disk=True,FB=False)
+        self.initialise_weights(self.w[1], disk=True,FB=False)
+        self.initialise_weights(self.skip[1], disk=True,FB=False)
 
     def forward(self, lower_y, inputmod):
         Y = self.w[0](lower_y[0]) + self.skip[0](inputmod[0])
         Y_disk = self.w[1](lower_y[1]) + self.skip[1](inputmod[1])
         return(Y, Y_disk)
 
-    def UpdateLayer(self, upper, beta, delta, winner_disk):
+    def update_layer(self, upper, beta, delta, winner_disk):
         if winner_disk:
-            self.w[1] = self.UpdateWeight(self.w[1], upper, beta, delta, average=False)
-            self.skip[1] = self.UpdateWeight(self.skip[1], upper, beta, delta, average=False)
+            self.w[1] = self.update_weights(self.w[1], upper, beta, delta, average=False)
+            self.skip[1] = self.update_weights(self.skip[1], upper, beta, delta, average=False)
         else:
-            self.w[0] = self.UpdateWeight(self.w[0], upper, beta, delta, self.wmask)
-            self.skip[0] = self.UpdateWeight(self.skip[0], upper, beta, delta, average=False)
+            self.w[0] = self.update_weights(self.w[0], upper, beta, delta, self.wmask)
+            self.skip[0] = self.update_weights(self.skip[0], upper, beta, delta, average=False)
 
 
 class HorizLayer(CustomLayer):
@@ -289,7 +289,7 @@ class HorizLayer(CustomLayer):
 
         return(Update_grid, Update_disk)
 
-    def UpdateLayer(self, upper, z, beta, delta):
+    def update_layer(self, upper, z, beta, delta):
 
         traces_GridToDisk = torch.autograd.grad(upper[0], self.weight_GridToDisk, grad_outputs=z[0], retain_graph=True, allow_unused=True)[0]
         traces_DiskToDisk = torch.autograd.grad(upper[0], self.weight_DiskToDisk, grad_outputs=z[0], retain_graph=True, allow_unused=True)[0]

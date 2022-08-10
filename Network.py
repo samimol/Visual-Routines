@@ -41,7 +41,7 @@ class Network():
         self.saveY2_disk = []
         self.saveQ_disk = []
         
-    def doStep(self, input_env, reward, reset_traces, device):
+    def do_step(self, input_env, reward, reset_traces, device):
 
         if self.save_activities:
             self.saveX.append([])
@@ -103,9 +103,9 @@ class Network():
 
             i += 1
 
-        ([self.Xmodtest, self.Y1test, self.Y1modtest, self.Y2test], [self.Xmod, self.Y1, self.Y1mod, self.Y2]) = self.detachAndreattach([self.Xmod, self.Y1, self.Y1mod, self.Y2])
+        ([self.Xmodtest, self.Y1test, self.Y1modtest, self.Y2test], [self.Xmod, self.Y1, self.Y1mod, self.Y2]) = self.detach_reattach([self.Xmod, self.Y1, self.Y1mod, self.Y2])
         ([self.Xmodtest_disk, self.Y1test_disk, self.Y1modtest_disk, self.Y2test_disk], [self.Xmod_disk, self.Y1_disk,
-                                                                                         self.Y1mod_disk, self.Y2_disk]) = self.detachAndreattach([self.Xmod_disk, self.Y1_disk, self.Y1mod_disk, self.Y2_disk])
+                                                                                         self.Y1mod_disk, self.Y2_disk]) = self.detach_reattach([self.Xmod_disk, self.Y1_disk, self.Y1mod_disk, self.Y2_disk])
 
         [XmodHoriz, Xmod_diskHoriz] = self.horizontal.forward(self.Xmod, self.Xmod_disk)
         ([self.X, self.X_disk], [self.Xmod, self.Xmod_disk]) = self.input_layer.forward([self.Y1, self.Y1_disk], [self.Y1mod, self.Y1mod_disk], input_env)
@@ -114,7 +114,7 @@ class Network():
         ([self.Y1, self.Y1_disk], [self.Y1mod, self.Y1mod_disk]) = self.hidden_layer_1.forward(lower_y=[self.X, self.X_disk], lower_ymod=[self.Xmod, self.Xmod_disk], upper_y=[self.Y2, self.Y2_disk])
         [self.Y2, self.Y2_disk] = self.hidden_layer_2.forward(lower_y=[self.Y1, self.Y1_disk], lower_ymod=[self.Y1mod, self.Y1mod_disk])
 
-        self.Z, self.Z_disk = self.calc_Output(device)
+        self.Z, self.Z_disk = self.calc_output(device)
 
         if self.save_activities:
             self.saveQ[len(self.saveQ) - 1].append(self.Z.detach())
@@ -126,7 +126,7 @@ class Network():
 
         return (action_chosen)
 
-    def calc_Output(self, device):
+    def calc_output(self, device):
         Z, Z_disk = self.output_layer.forward([self.Y2, self.Y2_disk], [self.Xmod, self.Xmod_disk])
 
         with torch.no_grad():
@@ -168,7 +168,7 @@ class Network():
             if rnd <= prob:
                 return i
 
-    def Accessory(self):
+    def accessory_propagation(self):
 
         if self.winner_disk:
             init = [torch.zeros_like(self.Y2), torch.zeros_like(self.Y1mod), torch.zeros_like(self.Y1), torch.zeros_like(self.Xmod)]
@@ -223,7 +223,7 @@ class Network():
 
         return (Zxmod, Zy1, Zy1mod, Zy2, Zxmod_disk, Zy1_disk, Zy1mod_disk, Zy2_disk)
 
-    def doLearn(self, reward):
+    def do_learn(self, reward):
         with torch.no_grad():
             if self.winner_disk:
                 exp_value = self.Z_disk[self.action]
@@ -231,7 +231,7 @@ class Network():
                 exp_value = self.Z[self.action]
             self.delta = reward - exp_value
 
-        (Zxmod, Zy1, Zy1mod, Zy2, Zxmod_disk, Zy1_disk, Zy1mod_disk, Zy2_disk) = self.Accessory()
+        (Zxmod, Zy1, Zy1mod, Zy2, Zxmod_disk, Zy1_disk, Zy1mod_disk, Zy2_disk) = self.accessory_propagation()
         self.input_layer.UpdateLayer([self.Xmod, self.Xmod_disk], [Zxmod, Zxmod_disk], self.beta, self.delta)
         self.horizontal.UpdateLayer([self.Xmod_disk, self.Xmod], [Zxmod_disk, Zxmod], self.beta, self.delta)
         self.hidden_layer_1.UpdateLayer([[self.Y1, self.Y1_disk], [self.Y1mod, self.Y1mod_disk]], [[Zy1, Zy1_disk], [Zy1mod, Zy1mod_disk]], self.beta, self.delta)
@@ -241,7 +241,7 @@ class Network():
         else:
             self.output_layer.UpdateLayer(self.Z[self.action], self.beta, self.delta, self.winner_disk)
 
-    def detachAndreattach(self, x):
+    def detach_reattach(self, x):
         detached = [xx.detach() for xx in x]
         for i, xx in enumerate(detached):
             xx.requires_grad = True
