@@ -40,7 +40,7 @@ class CustomLayer(nn.Module):
             traces[:, :, intermmask == 1] = m.T
         return(traces)
 
-    def init_weights(self, layer, disk=False, FB=True):
+    def init_weights(self, layer, disk=False, connections_to_neighbours=True):
         kernel = torch.zeros(layer.weight.shape)
         if layer.bias is not None:
             bias = torch.zeros(layer.bias.shape)
@@ -49,16 +49,18 @@ class CustomLayer(nn.Module):
                 if not disk:
                     if self.LayerType != "output":
                         kernel[f, f2, 1, 1] = self.initialisation_range * np.random.rand()
-                        if FB:
-                            kernel[f, f2, 0,1] = 0.1 * np.random.rand() + 0.2
-                            kernel[f, f2, 1,0] = 0.1 * np.random.rand() + 0.2
-                            kernel[f, f2, 1,2] = 0.1 * np.random.rand() + 0.2
-                            kernel[f, f2, 2,1] = 0.1 * np.random.rand() + 0.2
+                        if connections_to_neighbours:
+                            kernel[f, f2, 0,1] = 0.1 * np.random.rand() 
+                            kernel[f, f2, 1,0] = 0.1 * np.random.rand()
+                            kernel[f, f2, 1,2] = 0.1 * np.random.rand() 
+                            kernel[f, f2, 2,1] = 0.1 * np.random.rand()
                     else:
                         kernel[f, f2, :, :] = - 0.1 * np.random.rand() * torch.ones((kernel.shape[2], kernel.shape[3])) / 100
                         kernel[f, f2, self.grid_size - 1, self.grid_size - 1] = self.initialisation_range * np.random.rand()
                 else:
                     kernel[f, f2, 0] = self.initialisation_range * np.random.rand()
+                    #if FB:
+                    #  kernel[f, f2, 0] += 0.2
             if layer.bias is not None:
                 bias[f] = 0.1 * np.random.rand()
         layer.weight = torch.nn.Parameter(kernel)
@@ -81,10 +83,10 @@ class CustomLayer(nn.Module):
             
             # Averaging the weight and bias and updating the weights with RPE
             if average:
-                if self.LayerType == 'output':
-                    delta_weight = self.AverageTraces(delta_weight, mask)
-                else:
-                    delta_weight = delta_weight*mask
+                #if self.LayerType == 'output':
+                delta_weight = self.AverageTraces(delta_weight, mask)
+                #else:
+                    #delta_weight = delta_weight*mask
             weight_update = layer.weight + beta * delta * delta_weight
             layer.weight.copy_(weight_update)
             if layer.bias is not None:
@@ -164,9 +166,9 @@ class HiddenLayer(CustomLayer):
                 self.umod = [nn.Conv2d(feature_out, feature_out, kernel_size, stride=1, padding='same', bias=False), nn.Conv1d(feature_out, feature_out, 1, stride=1, padding='same', bias=False)]
 
         # Initializing weights
-        self.init_weights(self.v[0],FB=False)
-        self.init_weights(self.v[1], disk=True)
-        self.init_weights(self.t[0],FB=False)
+        self.init_weights(self.v[0],connections_to_neighbours=False)
+        self.init_weights(self.v[1], disk=True,connections_to_neighbours=False)
+        self.init_weights(self.t[0])
         self.init_weights(self.t[1], disk=True)
         if has_Ymod:
             self.init_weights(self.u[0])
@@ -176,8 +178,10 @@ class HiddenLayer(CustomLayer):
                 self.init_weights(self.umod[1], disk=True)
 
         # Setting the mask to have connections only between neighboours
-        self.vtmask = torch.clone(self.v[0].weight.detach())
-        self.vtmask[self.vtmask != 0] = 1    
+        self.vmask = torch.clone(self.v[0].weight.detach())
+        self.vmask[self.vmask != 0] = 1  
+        self.tmask = torch.clone(self.t[0].weight.detach())
+        self.tmask[self.tmask != 0] = 1    
         if has_Ymod:
           self.umask = torch.clone(self.u[0].weight.detach())
           self.umask[self.umask != 0] = 1    
@@ -200,15 +204,15 @@ class HiddenLayer(CustomLayer):
         return([current_y, current_y_disk])
 
     def UpdateLayer(self, upper, z, beta, delta):
-        self.v[0] = self.UpdateWeight(self.v[0], upper[0][0], beta, delta, self.vtmask, z[0][0])
+        self.v[0] = self.UpdateWeight(self.v[0], upper[0][0], beta, delta, self.vmask, z[0][0])
         self.v[1] = self.UpdateWeight(self.v[1], upper[0][1], beta, delta, z=z[0][1], average=False)
         
         if not self.has_Ymod:
-            self.t[0] = self.UpdateWeight(self.t[0], upper[0][0], beta, delta, self.vtmask, z[0][0])  
+            self.t[0] = self.UpdateWeight(self.t[0], upper[0][0], beta, delta, self.tmask, z[0][0])  
             self.t[1] = self.UpdateWeight(self.t[1], upper[0][1], beta, delta, z=z[0][1], average=False)
 
         if self.has_Ymod:
-            self.t[0] = self.UpdateWeight(self.t[0], upper[1][0], beta, delta, self.vtmask, z[1][0])  
+            self.t[0] = self.UpdateWeight(self.t[0], upper[1][0], beta, delta, self.tmask, z[1][0])  
             self.t[1] = self.UpdateWeight(self.t[1], upper[1][1], beta, delta, z=z[1][1], average=False)
 
             if self.upper_ymod:
@@ -234,11 +238,11 @@ class OutputLayer(CustomLayer):
         self.wmask[:, :, self.grid_size - 1, self.grid_size - 1] = 1/50
 
         # Initializing weights
-        self.init_weights(self.w[0])
-        self.init_weights(self.skip[0], disk=True) #not disk but same structure
+        self.init_weights(self.w[0],FB=False)
+        self.init_weights(self.skip[0], disk=True,FB=False) #not disk but same structure
 
-        self.init_weights(self.w[1], disk=True)
-        self.init_weights(self.skip[1], disk=True)
+        self.init_weights(self.w[1], disk=True,FB=False)
+        self.init_weights(self.skip[1], disk=True,FB=False)
 
     def forward(self, lower_y, inputmod):
         Y = self.w[0](lower_y[0]) + self.skip[0](inputmod[0])
@@ -267,8 +271,8 @@ class HorizLayer(CustomLayer):
         self.weight_DiskToDisk = torch.ones((1, features, 2))
 
         for i in range(features):
-            self.weight_GridToGrid[0, i, :, :] *= self.initialisation_range * np.random.rand() * torch.eye(self.grid_size)
-            self.weight_DiskToDisk[0, i, :] *= self.initialisation_range * np.random.rand()
+            self.weight_GridToGrid[0, i, :, :] *= self.initialisation_range * np.random.rand() * torch.eye(self.grid_size) 
+            self.weight_DiskToDisk[0, i, :] *= self.initialisation_range * np.random.rand() 
 
         self.weight_GridToGrid = torch.nn.Parameter(self.weight_GridToGrid)
         self.weight_DiskToDisk = torch.nn.Parameter(self.weight_DiskToDisk)
