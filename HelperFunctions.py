@@ -17,7 +17,7 @@ import warnings
 warnings.filterwarnings("ignore")
 
 
-def train(grid_size=15,TASK='trace',verbose=True):
+def train(grid_size=15,task='trace',max_trials=50000,max_length=9,verbose=False):
     
     device = None
     n = Network(4,grid_size)
@@ -25,23 +25,20 @@ def train(grid_size=15,TASK='trace',verbose=True):
     current_max_length = 2
     min_length = 2
     
-    if TASK == 'trace':
+    if task == 'trace':
         t=Trace(4,grid_size)
-    elif TASK == 'search_trace':
+    elif task == 'search_trace':
         t=SearchTrace(4,grid_size)
-    elif TASK == 'trace_search':
+    elif task == 'trace_search':
         t=TraceSearch(4,grid_size)
         t.only_trace_curve = True
     else:
         raise Exception("TASK should be 'trace', 'search_trace' or 'trace_search'")
 
-    max_trials = 50000
-    final_max_length = 9
-
     average = 0
     performance_track = []
     average_all = []
-    generalization = np.zeros((final_max_length-2,final_max_length+1))
+    generalization = np.zeros((max_length-2,max_length+1))
     
     action = 0
     tracker = 0
@@ -82,7 +79,7 @@ def train(grid_size=15,TASK='trace',verbose=True):
         # Each time the network achieve good accuracy for a given length, we
         # test generalization accuracy and then add 1 pixel to the curves
         if not t.no_curves:
-          if current_max_length < final_max_length:
+          if current_max_length < max_length:
             if (i-tracker) > 2000 and average >= 0.85:
                 if t.only_trace_curve == False:
                   for k in range(current_max_length+1,current_max_length+5):
@@ -95,7 +92,7 @@ def train(grid_size=15,TASK='trace',verbose=True):
                     
           # In the trace then search task, when the network has learned to trace
           # we add the search part of the task
-          elif current_max_length == final_max_length and (i-tracker) > 2000 and average >= 0.85 and t.only_trace_curve == True:
+          elif current_max_length == max_length and (i-tracker) > 2000 and average >= 0.85 and t.only_trace_curve == True:
               t.only_trace_curve = False
               t.no_curves = True
               current_max_length = 2
@@ -103,7 +100,7 @@ def train(grid_size=15,TASK='trace',verbose=True):
               tracker = i
              
           # Enf of training
-          elif current_max_length == final_max_length and (i-tracker) > 2000 and average >= 0.85 and t.only_trace_curve == False:
+          elif current_max_length == max_length and (i-tracker) > 2000 and average >= 0.85 and t.only_trace_curve == False:
             for k in range(current_max_length+1,current_max_length+5):
                 (n,gen) = test(n,TASK,grid_size,k,t.no_curves,t.only_trace_curve,device)
                 generalization[current_max_length-3,k-4] = gen
@@ -119,6 +116,10 @@ def train(grid_size=15,TASK='trace',verbose=True):
                   ax.plot(np.convolve(performance_track, np.ones(1000), 'valid') / 1000)
                   hdisplay.update(fig)
                   
+    if i < max_trials:
+        n.converged = True
+    else:
+        n.converged = False
     return(n,performance_track,generalization)
 
 
@@ -156,55 +157,6 @@ def test(n,TASK,grid_size,current_max_length,no_curves,only_trace_curve,device):
     n.exploitation_probability = prev_exploitation_probability
     return(n,np.mean(performance))
 
-def run_trials(t,curve_length,number_of_trials,n,device,verbose=True):
-    n.exploitation_probability = 1
-    n.save_activities = True
-    corrects = []
-    target_history = []
-    distr_history = []
-    feature_history = []
-    position_history = []
-    display = []
-    t.curve_length = curve_length
-    action = 0
-    n.saveX = [[]]
-    n.saveXmod = [[]]
-    n.saveY1 = [[]]
-    n.saveY1mod = [[]]
-    n.saveY2 = [[]]
-    n.saveQ = [[]]
-    
-    n.saveX_disk = [[]]
-    n.saveXmod_disk = [[]]
-    n.saveY1_disk = [[]]
-    n.saveY1mod_disk = [[]]
-    n.saveY2_disk = [[]]
-    n.saveQ_disk = [[]]
-    
-    for p in range(number_of_trials):
-      trial_running = True
-      display.append([])
-      i=0
-      new_input, reward, end_of_trial= t.do_step(action)
-      feature_history.append(t.feature_target) 
-      position_history.append(t.position_markers)
-      while trial_running:
-        action = n.do_step(new_input,reward,end_of_trial,device)
-        new_input, reward, end_of_trial = t.do_step(action)
-        display[p].append(n.X.detach())
-        if end_of_trial:
-          trial_running = False
-          if reward == 0:
-            corrects.append(0)
-          else:
-            corrects.append(1)
-        i = i + 1
-      target_history.append(t.target_curve)
-      distr_history.append(t.distractor_curve) 
-    if verbose:
-        print(np.mean(corrects))
-    return(n,corrects,feature_history,target_history,distr_history,position_history,display)  
-
 
 def open_base(filename):
     input = open(filename+'.pkl', 'rb')
@@ -212,9 +164,38 @@ def open_base(filename):
     input.close()
     return networks_base
 
+def run_and_save(n,curve_length=9,max_trials=15000,task='trace',grid_size=15):
+
+    if task == 'trace':
+        t=Trace(4,grid_size)
+    elif task == 'search_trace':
+        t=SearchTrace(4,grid_size)
+    elif task == 'trace_search':
+        t=TraceSearch(4,grid_size)
+
+    t.no_curves = False
+    t.only_trace_curve = False
+    max_dur = 50
+    
+    
+    if n.converged:
+        target_activations = np.zeros((n.grid_size ** 2+2,5,n.n_hidden_features,curve_length+1,max_dur))  #pixels, hidden layers, features, position on the curve, timestep  , Activations of the neurons when their RF fall on the target curve
+        distractor_activations = np.zeros((n.grid_size ** 2+2,5,n.n_hidden_features,curve_length+1,max_dur))  # Activations of the neurons when their RF fall on the distractor curve
+        count_target = np.zeros((n.grid_size ** 2+2,5,n.n_hidden_features,curve_length+1,max_dur)) # Number of time the neuron's RF was at a given position of the target curve, to compute the mean activity
+        count_distractor = np.zeros((n.grid_size ** 2+2,5,n.n_hidden_features,curve_length+1,max_dur)) # Number of time the neuron's RF was at a given position of the distractor curve, to compute the mean activity
+
+        n,corrects,colour_disk_history,target_history,distr_history,position_disk_history,display,Target,Distractor,count_target,count_distractor = run_and_average(t,curve_length,max_trials,n,device,target_activations,distractor_activations,count_target,count_distractor)
+       
+        #averaging for each unit
+        target_activations = target/count_target
+        distractor_activations = distractor/count_distractor
+
+        return(target_activations,distractor_activations,np.mean(corrects),colour_disk_history,target_curve_history,distractor_curve_history,max_trials,curve_length)
 
 
-def run_and_average(t,curve_length,number_of_trials,n,device,Target,Distractor,CountTarget,CountDistractor,verbose=True):
+
+
+def run_and_average(t,curve_length,number_of_trials,n,device,target,distractor,count_target,count_distractor,verbose=True):
     n.exploitation_probability = 1
     n.save_activities = True
     corrects = []
@@ -264,12 +245,12 @@ def run_and_average(t,curve_length,number_of_trials,n,device,Target,Distractor,C
           position_history.append(t.position_markers)            
           target_history.append(t.target_curve)
           distr_history.append(t.distractor_curve)
-          Target,CountTarget,Distractor,CountDistractor = running_average(n,t,curve_length,max_dur,Target,CountTarget,Distractor,CountDistractor)
+          target,count_target,distractor,count_distractor = running_average(n,t,curve_length,max_dur,target,count_target,distractor,count_distractor)
     if verbose:
         print(np.mean(corrects))
-    return(n,corrects,feature_history,target_history,distr_history,position_history,display,Target,Distractor,CountTarget,CountDistractor)  
+    return(n,corrects,feature_history,target_history,distr_history,position_history,display,target,distractor,count_target,count_distractor)  
 
-def running_average(n,t,curve_length,max_dur,Target,CountTarget,Distractor,CountDistractor):
+def running_average(n,t,curve_length,max_dur,target,count_target,distractor,count_distractor):
     dur = len(n.saveXmod[1])
     saved_states_list_disk = [n.saveXmod_disk[1],n.saveY1mod_disk[1],n.saveY2_disk[1]] 
     saved_states_list = [n.saveXmod[1],n.saveY1mod[1],n.saveY2[1]] 
@@ -281,32 +262,32 @@ def running_average(n,t,curve_length,max_dur,Target,CountTarget,Distractor,Count
       for layer in range(3):
         for timestep in range(dur):
             for l in range(curve_length):
-              Target[t.target_curve[l]+2,layer,f,l,timestep]+=saved_states_list[layer][timestep][0,f,t.target_curve[l] % n.grid_size,t.target_curve[l] // n.grid_size]
-              CountTarget[t.target_curve[l]+2,layer,f,l,timestep] += 1
+              target[t.target_curve[l]+2,layer,f,l,timestep]+=saved_states_list[layer][timestep][0,f,t.target_curve[l] % n.grid_size,t.target_curve[l] // n.grid_size]
+              count_target[t.target_curve[l]+2,layer,f,l,timestep] += 1
     
-              Distractor[t.distractor_curve[l]+2,layer,f,l,timestep]+=saved_states_list[layer][timestep][0,f,t.distractor_curve[l] % n.grid_size,t.distractor_curve[l] // n.grid_size]
-              CountDistractor[t.distractor_curve[l]+2,layer,f,l,timestep] += 1
+              distractor[t.distractor_curve[l]+2,layer,f,l,timestep]+=saved_states_list[layer][timestep][0,f,t.distractor_curve[l] % n.grid_size,t.distractor_curve[l] // n.grid_size]
+              count_distractor[t.distractor_curve[l]+2,layer,f,l,timestep] += 1
     
-            Target[t.position_markers[t.feature_target],layer,f,curve_length,timestep]+=saved_states_list_disk[layer][timestep][0,f,t.position_markers[t.feature_target]]
-            CountTarget[t.position_markers[t.feature_target],layer,f,curve_length,timestep] += 1
+            target[t.position_markers[t.feature_target],layer,f,curve_length,timestep]+=saved_states_list_disk[layer][timestep][0,f,t.position_markers[t.feature_target]]
+            count_target[t.position_markers[t.feature_target],layer,f,curve_length,timestep] += 1
     
-            Distractor[t.position_markers[dis],layer,f,curve_length,timestep]+=saved_states_list_disk[layer][timestep][0,f,t.position_markers[dis]]
-            CountDistractor[t.position_markers[dis],layer,f,curve_length,timestep] += 1
+            distractor[t.position_markers[dis],layer,f,curve_length,timestep]+=saved_states_list_disk[layer][timestep][0,f,t.position_markers[dis]]
+            count_distractor[t.position_markers[dis],layer,f,curve_length,timestep] += 1
         if timestep < max_dur:
               for l in range(curve_length):
-                Target[t.target_curve[l]+2,layer,f,l,dur:max_dur]+=np.array([saved_states_list[layer][dur-1][0,f,t.target_curve[l] % n.grid_size,t.target_curve[l] // n.grid_size] for i in range(max_dur - dur)])
-                CountTarget[t.target_curve[l]+2,layer,f,l,dur:max_dur] += np.array([1  for i in range(max_dur - dur)])
+                target[t.target_curve[l]+2,layer,f,l,dur:max_dur]+=np.array([saved_states_list[layer][dur-1][0,f,t.target_curve[l] % n.grid_size,t.target_curve[l] // n.grid_size] for i in range(max_dur - dur)])
+                count_target[t.target_curve[l]+2,layer,f,l,dur:max_dur] += np.array([1  for i in range(max_dur - dur)])
     
-                Distractor[t.distractor_curve[l]+2,layer,f,l,dur:max_dur]+=np.array([saved_states_list[layer][dur-1][0,f,t.distractor_curve[l] % n.grid_size,t.distractor_curve[l] // n.grid_size]  for i in range(max_dur - dur)])
-                CountDistractor[t.distractor_curve[l]+2,layer,f,l,dur:max_dur] += np.array([1 for i in range(max_dur - dur)])
+                distractor[t.distractor_curve[l]+2,layer,f,l,dur:max_dur]+=np.array([saved_states_list[layer][dur-1][0,f,t.distractor_curve[l] % n.grid_size,t.distractor_curve[l] // n.grid_size]  for i in range(max_dur - dur)])
+                count_distractor[t.distractor_curve[l]+2,layer,f,l,dur:max_dur] += np.array([1 for i in range(max_dur - dur)])
     
-              Target[t.position_markers[t.feature_target],layer,f,curve_length,dur:max_dur]+=np.array([saved_states_list_disk[layer][dur-1][0,f,t.position_markers[t.feature_target]]  for i in range(max_dur - dur)])
-              CountTarget[t.position_markers[t.feature_target],layer,f,curve_length,dur:max_dur] += np.array([1  for i in range(max_dur - dur)])
+              target[t.position_markers[t.feature_target],layer,f,curve_length,dur:max_dur]+=np.array([saved_states_list_disk[layer][dur-1][0,f,t.position_markers[t.feature_target]]  for i in range(max_dur - dur)])
+              count_target[t.position_markers[t.feature_target],layer,f,curve_length,dur:max_dur] += np.array([1  for i in range(max_dur - dur)])
     
-              Distractor[t.position_markers[dis],layer,f,curve_length,dur:max_dur]+=np.array([saved_states_list_disk[layer][dur-1][0,f,t.position_markers[dis]]  for i in range(max_dur - dur)])
-              CountDistractor[t.position_markers[dis],layer,f,curve_length,dur:max_dur] += np.array([1  for i in range(max_dur - dur)])
+              distractor[t.position_markers[dis],layer,f,curve_length,dur:max_dur]+=np.array([saved_states_list_disk[layer][dur-1][0,f,t.position_markers[dis]]  for i in range(max_dur - dur)])
+              count_distractor[t.position_markers[dis],layer,f,curve_length,dur:max_dur] += np.array([1  for i in range(max_dur - dur)])
       
-    return(Target,CountTarget,Distractor,CountDistractor)    
+    return(target,count_target,distractor,count_distractor)    
                     
                     
 
