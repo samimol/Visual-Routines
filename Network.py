@@ -7,10 +7,12 @@ Created on Fri Oct 29 12:37:14 2021
 
 from Layers import *
 
-
 class Network():
 
-    def __init__(self, n_input_features,grid_size):
+    def __init__(self, n_input_features,grid_size,weight_sharing=True):
+
+        self.weight_sharing = weight_sharing
+
         self.beta = 0.02
         self.n_input_features = n_input_features
         self.n_hidden_features = 4
@@ -19,10 +21,10 @@ class Network():
 
         self.grid_size = grid_size
 
-        self.input_layer = InputLayer(self.n_input_features, 4)
-        self.hidden_layer_1 = HiddenLayer(self.n_input_features, 4, has_Ymod=True)
-        self.hidden_layer_2 = HiddenLayer(self.n_hidden_features, self.n_hidden_features, has_Ymod=False)
-        self.output_layer = OutputLayer(self.n_hidden_features, self.n_input_features, 1,self.grid_size)
+        self.input_layer = InputLayer(self.n_input_features, 4,self.grid_size,self.weight_sharing)
+        self.hidden_layer_1 = HiddenLayer(self.n_input_features, 4, self.grid_size, has_Ymod=True,weight_sharing=self.weight_sharing)
+        self.hidden_layer_2 = HiddenLayer(self.n_hidden_features, self.n_hidden_features, self.grid_size, has_Ymod=False,weight_sharing=self.weight_sharing)
+        self.output_layer = OutputLayer(self.n_hidden_features, self.n_input_features, 1,self.grid_size,self.weight_sharing)
         self.horizontal = HorizLayer(self.n_input_features, self.grid_size)
 
         self.save_activities = False
@@ -71,13 +73,13 @@ class Network():
         norm = 10
 
         while i < 50 and norm > 0:
-
+            
             prevY1mod = self.Y1mod.detach()
 
             [XmodHoriz, Xmod_diskHoriz] = self.horizontal.forward(self.Xmod, self.Xmod_disk)
             ([self.X, self.X_disk], [self.Xmod, self.Xmod_disk]) = self.input_layer.forward([self.Y1, self.Y1_disk], [self.Y1mod, self.Y1mod_disk], input_env)
-            self.Xmod = self.input_layer.ActivationFunction((self.Xmod + XmodHoriz) * self.X)
-            self.Xmod_disk = self.input_layer.ActivationFunction((self.Xmod_disk + Xmod_diskHoriz) * self.X_disk)
+            self.Xmod = self.input_layer.activation_function((self.Xmod + XmodHoriz) * self.X)
+            self.Xmod_disk = self.input_layer.activation_function((self.Xmod_disk + Xmod_diskHoriz) * self.X_disk)
             ([self.Y1, self.Y1_disk], [self.Y1mod, self.Y1mod_disk]) = self.hidden_layer_1.forward(lower_y=[self.X, self.X_disk], lower_ymod=[self.Xmod, self.Xmod_disk], upper_y=[self.Y2, self.Y2_disk])
             [self.Y2, self.Y2_disk] = self.hidden_layer_2.forward(lower_y=[self.Y1, self.Y1_disk], lower_ymod=[self.Y1mod, self.Y1mod_disk])
 
@@ -94,7 +96,7 @@ class Network():
                 self.saveY1mod_disk[len(self.saveY1mod_disk) - 1].append(self.Y1mod_disk.detach())
                 self.saveY2_disk[len(self.saveY2_disk) - 1].append(self.Y2_disk.detach())
                 
-                self.Z, self.Z_disk = self.calc_Output(device)
+                self.Z, self.Z_disk = self.calc_output(device)
                 self.saveQ[len(self.saveQ) - 1].append(self.Z.detach())
                 self.saveQ_disk[len(self.saveQ_disk) - 1].append(self.Z_disk.detach())
 
@@ -109,8 +111,8 @@ class Network():
 
         [XmodHoriz, Xmod_diskHoriz] = self.horizontal.forward(self.Xmod, self.Xmod_disk)
         ([self.X, self.X_disk], [self.Xmod, self.Xmod_disk]) = self.input_layer.forward([self.Y1, self.Y1_disk], [self.Y1mod, self.Y1mod_disk], input_env)
-        self.Xmod = self.input_layer.ActivationFunction((self.Xmod + XmodHoriz) * self.X)
-        self.Xmod_disk = self.input_layer.ActivationFunction((self.Xmod_disk + Xmod_diskHoriz) * self.X_disk)
+        self.Xmod = self.input_layer.activation_function((self.Xmod + XmodHoriz) * self.X)
+        self.Xmod_disk = self.input_layer.activation_function((self.Xmod_disk + Xmod_diskHoriz) * self.X_disk)
         ([self.Y1, self.Y1_disk], [self.Y1mod, self.Y1mod_disk]) = self.hidden_layer_1.forward(lower_y=[self.X, self.X_disk], lower_ymod=[self.Xmod, self.Xmod_disk], upper_y=[self.Y2, self.Y2_disk])
         [self.Y2, self.Y2_disk] = self.hidden_layer_2.forward(lower_y=[self.Y1, self.Y1_disk], lower_ymod=[self.Y1mod, self.Y1mod_disk])
 
@@ -167,6 +169,7 @@ class Network():
         for (i, prob) in enumerate(probs):
             if rnd <= prob:
                 return i
+        #return(np.random.choice(np.arange(len(probabilities[0,0,:])), p=probabilities[0,0,:].numpy()))
 
     def accessory_propagation(self):
 
@@ -232,14 +235,14 @@ class Network():
             self.delta = reward - exp_value
 
         (Zxmod, Zy1, Zy1mod, Zy2, Zxmod_disk, Zy1_disk, Zy1mod_disk, Zy2_disk) = self.accessory_propagation()
-        self.input_layer.UpdateLayer([self.Xmod, self.Xmod_disk], [Zxmod, Zxmod_disk], self.beta, self.delta)
-        self.horizontal.UpdateLayer([self.Xmod_disk, self.Xmod], [Zxmod_disk, Zxmod], self.beta, self.delta)
-        self.hidden_layer_1.UpdateLayer([[self.Y1, self.Y1_disk], [self.Y1mod, self.Y1mod_disk]], [[Zy1, Zy1_disk], [Zy1mod, Zy1mod_disk]], self.beta, self.delta)
-        self.hidden_layer_2.UpdateLayer([[self.Y2, self.Y2_disk]], [[Zy2, Zy2_disk]], self.beta, self.delta)
+        self.input_layer.update_layer([self.Xmod, self.Xmod_disk], [Zxmod, Zxmod_disk], self.beta, self.delta)
+        self.horizontal.update_layer([self.Xmod_disk, self.Xmod], [Zxmod_disk, Zxmod], self.beta, self.delta)
+        self.hidden_layer_1.update_layer([[self.Y1, self.Y1_disk], [self.Y1mod, self.Y1mod_disk]], [[Zy1, Zy1_disk], [Zy1mod, Zy1mod_disk]], self.beta, self.delta)
+        self.hidden_layer_2.update_layer([[self.Y2, self.Y2_disk]], [[Zy2, Zy2_disk]], self.beta, self.delta)
         if self.winner_disk:
-            self.output_layer.UpdateLayer(self.Z_disk[self.action], self.beta, self.delta, self.winner_disk)
+            self.output_layer.update_layer(self.Z_disk[self.action], self.beta, self.delta, self.winner_disk)
         else:
-            self.output_layer.UpdateLayer(self.Z[self.action], self.beta, self.delta, self.winner_disk)
+            self.output_layer.update_layer(self.Z[self.action], self.beta, self.delta, self.winner_disk)
 
     def detach_reattach(self, x):
         detached = [xx.detach() for xx in x]

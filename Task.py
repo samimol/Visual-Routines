@@ -12,16 +12,18 @@ import random
 
 class Task():
 
-    def __init__(self, n_hidden_features):
+    def __init__(self, n_hidden_features,grid_size):
 
-        self.grid_size = 20
+        self.grid_size = grid_size
 
         self.state = 0
         self.trial_ended = False
 
-        self.only_trace_curve = True # For the first part of the training of the trace then search task, we only do the curve tracing task
+        self.only_trace_curve = False # For the first part of the training of the trace then search task, we only do the curve tracing task
 
         self.state = 'intertrial'
+        
+        self.curve_length = 2
 
         self.no_curves = True # First part of the curicculum is no curve, only the fixation point and a blue pixel
 
@@ -150,9 +152,9 @@ class Task():
         
 class Trace(Task):
     
-    def __init__(self,n_hidden_features):
+    def __init__(self,n_hidden_features,grid_size):
         self.task_type = 'trace'
-        super().__init__(n_hidden_features)
+        super().__init__(n_hidden_features,grid_size)
         
     def draw_stimulus(self,curve1,curve2):
         display = torch.zeros((1, self.n_hidden_features, self.grid_size, self.grid_size))
@@ -183,9 +185,9 @@ class Trace(Task):
         
 class SearchTrace(Task):
     
-    def __init__(self,n_hidden_features):
+    def __init__(self,n_hidden_features,grid_size):
         self.task_type = 'searchtrace'
-        super().__init__(n_hidden_features)
+        super().__init__(n_hidden_features,grid_size)
         
     def draw_stimulus(self,curve1,curve2):
         display = torch.zeros((1, self.n_hidden_features, self.grid_size, self.grid_size))
@@ -225,9 +227,9 @@ class SearchTrace(Task):
         
 class TraceSearch(Task):      
     
-    def __init__(self,n_hidden_features):
+    def __init__(self,n_hidden_features,grid_size):
         self.task_type = 'tracesearch'
-        super().__init__(n_hidden_features)
+        super().__init__(n_hidden_features,grid_size)
         
     def draw_stimulus(self,curve1,curve2):
         
