@@ -20,7 +20,7 @@ def setup_args():
     
     parser.add_argument('--train', action='store_true')
     parser.add_argument('--test', action='store_true')
-    parser.add_argument('--task', type=str, default='TRACE')
+    parser.add_argument('--task', type=str, default='trace') #search_trace #trace_search
     parser.add_argument('--max_trials', type=int, default=50000)
     parser.add_argument('--grid_size', type=int, default=15)
     parser.add_argument('--max_length', type=int, default=9)
@@ -52,12 +52,18 @@ if __name__ == "__main__":
         with open(args.path, 'rb') as pickle_file:
             n = pickle.load(pickle_file)
         
-        (target_activations,distractor_activations,performance,colour_disk_history,target_curve_history,distractor_curve_history,max_trials,curve_length) = run_and_save(n,
-                                                                                                                                                                         task=args.task,
-                                                                                                                                                                         curve_length=args.max_length,
-                                                                                                                                                                         max_trials=args.max_trials,
-                                                                                                                                                                         grid_size=arg.grid_size)                                                                                                                                                                         
-
+        (target_activations,
+         distractor_activations,
+         performance,
+         colour_disk_history,
+         target_curve_history,
+         distractor_curve_history,
+         max_trials,
+         curve_length) = run_and_save(n,
+                                      task=args.task,
+                                      curve_length=args.max_length,
+                                      max_trials=args.max_trials,
+                                      grid_size=args.grid_size)                                                                                                                                                                         
 
         resultsdict = {'target_activations':[target_activations], # Activations of the neurons when their RF fall on the target curve
                'distractor_activations':[distractor_activations],  # Activations of the neurons when their RF fall on the distractor curve
