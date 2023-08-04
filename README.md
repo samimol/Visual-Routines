@@ -22,7 +22,7 @@ The model will be saved in an output folder made in the directory
 
 To test the saved model on 15000 trials and save the neural activities that will be used for the analysis, run the following command:
 ```
-python main.py --test --task trace --max_trials 15000 --grid_size 15 --max_length 9 --path 'output/network_trace_6.pkl'
+python main.py --test --task trace --max_trials 15000 --grid_size 15 --max_length 9 --path 'results/network_trace_6.pkl'
 ```
 
 ## Reproduvcing the figures in the paper
