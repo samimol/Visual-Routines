@@ -37,14 +37,14 @@ if __name__ == "__main__":
                                                      max_trials=args.max_trials,
                                                      grid_size=args.grid_size,
                                                      max_length=args.max_length)
-        os.makedirs('output',exist_ok=True)
+        os.makedirs('results',exist_ok=True)
         
-        filename = os.path.join('output','network_'+args.task+'_'+str(args.task)+'.pkl')
+        filename = os.path.join('results','network_'+args.task+'_'+str(args.max_length)+'.pkl')
         with open(filename, 'wb') as output:  # Overwrites any existing file.
             pickle.dump(n, output, pickle.HIGHEST_PROTOCOL)
             
-        np.save(os.path.join('output','performance_'+args.task+'_'+str(args.task)), np.array(performance_track))
-        np.save(os.path.join('output','generalisation_'+args.task+'_'+str(args.task)), generalization)
+        np.save(os.path.join('results','performance_'+args.task+'_'+str(args.max_length)), np.array(performance_track))
+        np.save(os.path.join('results','generalisation_'+args.task+'_'+str(args.max_length)), generalization)
 
         
 
@@ -58,16 +58,17 @@ if __name__ == "__main__":
                                                                                                                                                                          max_trials=args.max_trials,
                                                                                                                                                                          grid_size=arg.grid_size)                                                                                                                                                                         
 
-        resultsdict = {'target_activations':target_activations, # Activations of the neurons when their RF fall on the target curve
-                       'distractor_activations':distractor_activations, # Activations of the neurons when their RF fall on the distractor curve
-                       'performance':performance,
-                       'colour_disk_history':colour_disk_history, # Colour of the disk for the search then trace and trace then search task
-                       'target_curve_history':target_curve_history, # Coordinates of the target curve pixels
-                       'distractor_curve_history':distractor_curve_history, # Coordinates of the distractor curve pixels
-                       'number_trials':max_trials,
-                       'curve_length':curve_length}
+
+        resultsdict = {'target_activations':[target_activations], # Activations of the neurons when their RF fall on the target curve
+               'distractor_activations':[distractor_activations],  # Activations of the neurons when their RF fall on the distractor curve
+               'performance':[performance],
+               'colour_disk_history':[colour_disk_history], # Colour of the disk for the search then trace and trace then search task
+               'target_curve_history':[target_curve_history], # Coordinates of the target curve pixels
+               'distractor_curve_history':[distractor_curve_history], # Coordinates of the distractor curve pixels
+               'number_trials':[max_trials],
+               'curve_length':[curve_length]}
 
         df = pd.DataFrame(resultsdict)
-        df.to_pickle(os.path.join('output','network_activations'+args.task+'_'+str(args.task)+'.pkl'))
+        df.to_pickle(os.path.join('results','network_activations_'+args.task+'_'+str(args.max_length)+'.pkl'))
             
         

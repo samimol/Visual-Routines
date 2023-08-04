@@ -176,23 +176,21 @@ def run_and_save(n,curve_length=9,max_trials=15000,task='trace',grid_size=15):
     t.no_curves = False
     t.only_trace_curve = False
     max_dur = 50
-    
-    
-    if n.converged:
-        target_activations = np.zeros((n.grid_size ** 2+2,5,n.n_hidden_features,curve_length+1,max_dur))  #pixels, hidden layers, features, position on the curve, timestep  , Activations of the neurons when their RF fall on the target curve
-        distractor_activations = np.zeros((n.grid_size ** 2+2,5,n.n_hidden_features,curve_length+1,max_dur))  # Activations of the neurons when their RF fall on the distractor curve
-        count_target = np.zeros((n.grid_size ** 2+2,5,n.n_hidden_features,curve_length+1,max_dur)) # Number of time the neuron's RF was at a given position of the target curve, to compute the mean activity
-        count_distractor = np.zeros((n.grid_size ** 2+2,5,n.n_hidden_features,curve_length+1,max_dur)) # Number of time the neuron's RF was at a given position of the distractor curve, to compute the mean activity
 
-        n,corrects,colour_disk_history,target_history,distr_history,position_disk_history,display,Target,Distractor,count_target,count_distractor = run_and_average(t,curve_length,max_trials,n,device,target_activations,distractor_activations,count_target,count_distractor)
+
+    if n.converged:
+        target_activations = np.zeros((n.grid_size ** 2+2,5,n.n_hidden_features,curve_length+1,max_dur))  #pixels, hidden layers, features, position on the curve, timestep
+        distractor_activations = np.zeros((n.grid_size ** 2+2,5,n.n_hidden_features,curve_length+1,max_dur))
+        count_target = np.zeros((n.grid_size ** 2+2,5,n.n_hidden_features,curve_length+1,max_dur))
+        count_distractor = np.zeros((n.grid_size ** 2+2,5,n.n_hidden_features,curve_length+1,max_dur))
+
+        n,corrects,colour_disk_history,target_history,distr_history,position_disk_history,display,target_curve_history,distractor_curve_history,count_target,count_distractor = run_and_average(t,curve_length,max_trials,n,device,target_activations,distractor_activations,count_target,count_distractor)
        
         #averaging for each unit
-        target_activations = target/count_target
-        distractor_activations = distractor/count_distractor
+        target_activations = target_activations/count_target
+        distractor_activations = distractor_activations/count_distractor
 
         return(target_activations,distractor_activations,np.mean(corrects),colour_disk_history,target_curve_history,distractor_curve_history,max_trials,curve_length)
-
-
 
 
 def run_and_average(t,curve_length,number_of_trials,n,device,target,distractor,count_target,count_distractor,verbose=True):
@@ -312,7 +310,7 @@ def latency_operation(TD,operation,TASK,CurveLength,number_interpolation_points=
     
 
     #Interpolating the response curve to have non-integer latency of modulation   
-    normalized_TD = TD[neurons,:,:,position_on_curve,:,:]/np.expand_dims(np.max(np.abs(TD[neurons,:,:,position_on_curve,:,:]),axis = -1),axis=-1)
+    normalized_TD = TD[neurons,:,:,position_on_curve,:]/np.expand_dims(np.max(np.abs(TD[neurons,:,:,position_on_curve,:]),axis = -1),axis=-1)
     interpollation_function = scipy.interpolate.interp1d(np.arange(0,dur), normalized_TD, kind='linear',axis=-1)
     interpolated_normalized_TD = interpollation_function(np.linspace(0, dur-1, num=number_interpolation_points))
     smoothed_interpolated_normalized_TD = uniform_filter1d(interpolated_normalized_TD, size=100,axis = -1)
@@ -323,12 +321,12 @@ def latency_operation(TD,operation,TASK,CurveLength,number_interpolation_points=
     condition = np.expand_dims(condition,axis=-1)
 
     #Getting the timestep when the modulation is greater than criterion%
-    latency = np.nanargmin(smoothed_interpolated_normalized_TD[:,:,:,:,::-1]>condition,axis=-1)
+    latency = np.nanargmin(smoothed_interpolated_normalized_TD[:,:,:,::-1]>condition,axis=-1)
     latency = latency.astype('float')
     latency = 499 - latency
 
     #Removing recording site with non-positive mor non monotonous modulation
-    latency[np.isnan(smoothed_interpolated_normalized_TD[:,:,:,:,0])] = np.nan
+    latency[np.isnan(smoothed_interpolated_normalized_TD[:,:,:,0])] = np.nan
     #latency[smoothed_interpolated_normalized_TD[:,:,:,:,-1] < 0.5] = np.nan #modulation at the end is lower than half of the max
     #latency[smoothed_interpolated_normalized_TD[:,:,:,:,0]>=0.5] = np.nan #modulation at the beggining is greater than half of the max
     latency[np.abs(np.
@@ -336,7 +334,7 @@ def latency_operation(TD,operation,TASK,CurveLength,number_interpolation_points=
 
 
     latency[np.max(smoothed_interpolated_normalized_TD,axis=-1)<=0] = np.nan #modulation is negative
-    latency[smoothed_interpolated_normalized_TD[:,:,:,:,-1] < smoothed_interpolated_normalized_TD[:,:,:,:,0]] = np.nan #modulation at the beginning is greater than at the end
+    latency[smoothed_interpolated_normalized_TD[:,:,:,-1] < smoothed_interpolated_normalized_TD[:,:,:,0]] = np.nan #modulation at the beginning is greater than at the end
 
 
     #Keeping non nan entries
@@ -347,7 +345,69 @@ def latency_operation(TD,operation,TASK,CurveLength,number_interpolation_points=
     return latency
 
 
+def compute_z(n,target_hist,distr_hist,grid_size,timesteps):
+  if n.winner_disk:
+      init = [torch.zeros_like(n.Y2), torch.zeros_like(n.Y1mod), torch.zeros_like(n.Y1), torch.zeros_like(n.Xmod)]
+      init_disk = torch.autograd.grad(n.Z_disk[n.action], [n.Y2_disk, n.Y1mod_disk, n.Y1_disk, n.Xmod_disk], retain_graph=True, allow_unused=True)
+  else:
+      init = torch.autograd.grad(n.Z[n.action], [n.Y2, n.Y1mod, n.Y1, n.Xmod], retain_graph=True, allow_unused=True)
+      init_disk = [torch.zeros_like(n.Y2_disk), torch.zeros_like(n.Y1mod_disk), torch.zeros_like(n.Y1_disk), torch.zeros_like(n.Xmod_disk)]
 
+
+  Zy2 = init[0]
+  Zy1mod = init[1]
+  Zy1 = init[2]
+  Zxmod = init[3]
+
+  Zy2_disk = init_disk[0]
+  Zy1mod_disk = init_disk[1]
+  Zy1_disk = init_disk[2]
+  Zxmod_disk = init_disk[3]
+
+  target_activations_accessory = np.zeros((timesteps,t.curve_length))
+  distractor_activations_accessory = np.zeros((timesteps,t.curve_length))
+
+  for i in range(timesteps):
+      ZXmod_prev = Zxmod
+      Zxmod_disk_prev = Zxmod_disk
+
+      Zy2 = torch.autograd.grad(n.Y1mod, n.Y2test, grad_outputs=Zy1mod, retain_graph=True, allow_unused=True)[0]
+      tt = torch.autograd.grad(n.Y1mod, n.Y2test, grad_outputs=Zy1mod, retain_graph=True, allow_unused=True)[0]
+      Zy2 = Zy2 + init[0]
+      
+
+      Zy1mod = torch.autograd.grad(n.Y2, n.Y1mod, grad_outputs=Zy2, retain_graph=True, allow_unused=True)[0]
+      Zy1mod = Zy1mod + torch.autograd.grad(n.Xmod, n.Y1modtest, grad_outputs=Zxmod, retain_graph=True, allow_unused=True)[0]
+      Zy1mod = Zy1mod + init[1]
+
+      Zy1 = torch.autograd.grad(n.Y2, n.Y1, grad_outputs=Zy2, retain_graph=True, allow_unused=True)[0]
+      Zy1 = Zy1 + init[2]
+
+ 
+      Zxmod = torch.autograd.grad(n.Y1mod, n.Xmod, grad_outputs=Zy1mod, retain_graph=True, allow_unused=True)[0]
+      Zxmod = Zxmod + torch.autograd.grad(n.Xmod, n.Xmodtest, grad_outputs=ZXmod_prev, retain_graph=True, allow_unused=True)[0]
+      Zxmod = Zxmod + torch.autograd.grad(n.Xmod_disk, n.Xmodtest, grad_outputs=Zxmod_disk_prev, retain_graph=True, allow_unused=True)[0]
+      Zxmod = Zxmod + init[3]
+      for j in range(t.curve_length):
+        target_activations_accessory[i,j] = Zy1mod[0,0,target_hist[j] % grid_size, target_hist[j] //grid_size]
+        distractor_activations_accessory[i,j] = Zy1mod[0,0,distr_hist[j] % grid_size, distr_hist[j] //grid_size]
+
+
+      Zy2_disk = torch.autograd.grad(n.Y1mod_disk, n.Y2test_disk, grad_outputs=Zy1mod_disk, retain_graph=True, allow_unused=True)[0]
+      Zy2_disk = Zy2_disk + init_disk[0]
+
+      Zy1mod_disk = torch.autograd.grad(n.Y2_disk, n.Y1mod_disk, grad_outputs=Zy2_disk, retain_graph=True, allow_unused=True)[0]
+      Zy1mod_disk = Zy1mod_disk + torch.autograd.grad(n.Xmod_disk, n.Y1modtest_disk, grad_outputs=Zxmod_disk, retain_graph=True, allow_unused=True)[0]
+      Zy1mod_disk = Zy1mod_disk + init_disk[1]
+
+      Zy1_disk = torch.autograd.grad(n.Y2_disk, n.Y1_disk, grad_outputs=Zy2_disk, retain_graph=True, allow_unused=True)[0]
+      Zy1_disk = Zy1_disk + init_disk[2]
+
+      Zxmod_disk = Zxmod_disk + torch.autograd.grad(n.Y1mod_disk, n.Xmod_disk, grad_outputs=Zy1mod_disk, retain_graph=True, allow_unused=True)[0]
+      Zxmod_disk = Zxmod_disk + torch.autograd.grad(n.Xmod_disk, n.Xmodtest_disk, grad_outputs=Zxmod_disk_prev, retain_graph=True, allow_unused=True)[0]
+      Zxmod_disk = Zxmod_disk + torch.autograd.grad(n.Xmod, n.Xmodtest_disk, grad_outputs=ZXmod_prev, retain_graph=True, allow_unused=True)[0]
+      Zxmod_disk = Zxmod_disk + init_disk[3]
+  return(target_activations_accessory,distractor_activations_accessory)
 
 
     
