@@ -25,6 +25,6 @@ To test the saved model on 15000 trials and save the neural activities that will
 python main.py --test --task trace --max_trials 15000 --grid_size 15 --max_length 9 --path results/network_trace_6.pkl
 ```
 
-## Reproduvcing the figures in the paper
+## Reproducing the figures in the paper
 
 To reproduce the analysis and plots shown in the paper, run the jupyter notebook analysis.ipynb
