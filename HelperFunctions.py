@@ -17,7 +17,7 @@ import warnings
 warnings.filterwarnings("ignore")
 
 
-def train(grid_size=6,TASK='trace',verbose=True):
+def train(grid_size=15,TASK='trace',verbose=True):
     
     device = None
     n = Network(4,grid_size)
@@ -36,7 +36,7 @@ def train(grid_size=6,TASK='trace',verbose=True):
         raise Exception("TASK should be 'trace', 'search_trace' or 'trace_search'")
 
     max_trials = 50000
-    final_max_length = 6
+    final_max_length = 9
 
     average = 0
     performance_track = []
@@ -111,12 +111,10 @@ def train(grid_size=6,TASK='trace',verbose=True):
                   
         if verbose:
             # Plotting the accuracy every 500 trials
-            if i == 20:
-                print('here')
             if i==0:
                 fig,ax = plt.subplots(1,1)
                 hdisplay = display.display("", display_id=True)
-            if i>19 and i%20 == 0:
+            if i>499 and i%500 == 0:
                   ax.clear()
                   ax.plot(np.convolve(performance_track, np.ones(1000), 'valid') / 1000)
                   hdisplay.update(fig)
