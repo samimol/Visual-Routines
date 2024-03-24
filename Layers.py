@@ -206,6 +206,13 @@ class InputLayer(CustomLayer):
 
         self.u_disk_mask = torch.clone(self.umod[1].weight.detach())
         self.u_disk_mask[self.u_disk_mask != 0] = 1  
+             
+    def register_params(self):
+        self.register_parameter(name='u0_weight',param=self.umod[0].weight)
+        self.register_parameter(name='u0_bias',param=self.umod[0].bias)
+        
+        self.register_parameter(name='u1_weight',param=self.umod[1].weight)
+        self.register_parameter(name='u1_bias',param=self.umod[1].bias)
         
     def forward(self, upper_y, upper_ymod, input):
         Y = input[0]
@@ -220,7 +227,10 @@ class InputLayer(CustomLayer):
         self.umod[0] = self.update_weights(self.umod[0], upper[0], beta, delta, self.umask, z[0],average=self.weight_sharing)
         self.umod[1] = self.update_weights(self.umod[1], upper[1], beta, delta,self.u_disk_mask, z=z[1], average=False,average_disk=True)
 
-
+    def mask_weights(self):
+        with torch.no_grad():
+            self.umod[0].weight *= self.umask
+            self.umod[1].weight *= self.u_disk_mask
 
 
 class HiddenLayer(CustomLayer):
@@ -272,6 +282,33 @@ class HiddenLayer(CustomLayer):
           self.umask[self.umask != 0] = 1    
           self.u_disk_mask = torch.clone(self.u[1].weight.detach())
           self.u_disk_mask[self.u_disk_mask != 0] = 1  
+          
+    def register_params(self):
+        self.register_parameter(name='v0_weight',param=self.v[0].weight)
+        self.register_parameter(name='v0_bias',param=self.v[0].bias)
+        
+        self.register_parameter(name='v1_weight',param=self.v[1].weight)
+        self.register_parameter(name='v1_bias',param=self.v[1].bias)
+        
+        self.register_parameter(name='t0_weight',param=self.t[0].weight)
+        self.register_parameter(name='t0_bias',param=self.t[0].bias)
+        
+        self.register_parameter(name='t1_weight',param=self.t[1].weight)
+        self.register_parameter(name='t1_bias',param=self.t[1].bias)
+        
+        if self.has_Ymod:
+            self.register_parameter(name='u0_weight',param=self.u[0].weight)
+            self.register_parameter(name='u0_bias',param=self.u[0].bias)
+            
+            self.register_parameter(name='u1_weight',param=self.u[1].weight)
+            self.register_parameter(name='u1_bias',param=self.u[1].bias)    
+            
+            if self.upper_ymod:
+                self.register_parameter(name='umod0_weight',param=self.umod[0].weight)
+                self.register_parameter(name='umod0_bias',param=self.umod[0].bias)
+                
+                self.register_parameter(name='umod1_weight',param=self.umod[1].weight)
+                self.register_parameter(name='umod1_bias',param=self.umod[1].bias)    
 
     def forward(self, lower_y=None, lower_ymod=None, upper_y=None, upper_ymod=None, det=False):
         if self.has_Ymod:
@@ -309,6 +346,19 @@ class HiddenLayer(CustomLayer):
                 self.u[0] = self.update_weights(self.u[0], upper[1][0], beta, delta, self.umask, z[1][0])
                 self.u[1] = self.update_weights(self.u[1], upper[1][1], beta, delta,self.u_disk_mask, z=z[1][1], average=False,average_disk=True)
 
+    def mask_weights(self):
+        with torch.no_grad():
+            self.v[0].weight *= self.vmask
+            self.t[0].weight *= self.tmask
+            self.t[1].weight *= self.t_disk_mask
+            
+            if self.has_Ymod:
+                if self.upper_ymod:
+                    self.umod[0].weight *= self.umask
+                    self.umod[1].weight *= self.u_disk_mask
+                else:
+                    self.u[0].weight *= self.umask
+                    self.u[1].weight *= self.u_disk_mask
 
 
 class OutputLayer(CustomLayer):
@@ -333,6 +383,21 @@ class OutputLayer(CustomLayer):
 
         self.initialise_weights(self.w[1], disk=False,marker=True)
         self.initialise_weights(self.skip[1], disk=True)
+        
+    def register_params(self):
+        self.register_parameter(name='w0_weight',param=self.w[0].weight)
+        self.register_parameter(name='w0_bias',param=self.w[0].bias)
+        
+        self.register_parameter(name='w1_weight',param=self.w[1].weight)
+        self.register_parameter(name='w1_bias',param=self.w[1].bias)
+        
+        self.register_parameter(name='skip0_weight',param=self.skip[0].weight)
+        self.register_parameter(name='skip0_bias',param=self.skip[0].bias)
+        
+        self.register_parameter(name='skip1_weight',param=self.skip[1].weight)
+        self.register_parameter(name='skip1_bias',param=self.skip[1].bias)
+        
+
 
     def forward(self, lower_y, inputmod):
         Y = self.w[0](lower_y[0]) + self.skip[0](inputmod[0])
@@ -346,8 +411,14 @@ class OutputLayer(CustomLayer):
         else:
             self.w[0] = self.update_weights(self.w[0], upper, beta, delta, self.wmask)
             self.skip[0] = self.update_weights(self.skip[0], upper, beta, delta, average=False)
-
-
+            
+    def mask_weights(self):
+        with torch.no_grad():
+            intermmask = torch.ones((2 * self.grid_size - 1, 2 * self.grid_size - 1))
+            intermmask[self.grid_size - 1, self.grid_size - 1] = 0
+            m = torch.mean(self.w[0].weight[:, :, intermmask == 1], axis=2)
+            self.w[0].weight[:, :, intermmask == 1] = m.T
+            
 class HorizLayer(CustomLayer):
 
     def __init__(self, features, grid_size):
@@ -365,6 +436,13 @@ class HorizLayer(CustomLayer):
 
         self.weight_GridToGrid = torch.nn.Parameter(self.weight_GridToGrid)
         self.weight_DiskToDisk = torch.nn.Parameter(self.weight_DiskToDisk)
+        
+    def register_params(self):
+            self.register_parameter(name='weight_GridToDisk',param=self.weight_GridToDisk)
+            self.register_parameter(name='weight_DiskToGrid',param=self.weight_DiskToGrid)
+            
+            self.register_parameter(name='weight_GridToGrid',param=self.weight_GridToGrid)
+            self.register_parameter(name='weight_DiskToDisk',param=self.weight_DiskToDisk)
 
     def forward(self, Y, Y_disk):
 

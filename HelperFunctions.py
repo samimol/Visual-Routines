@@ -123,7 +123,7 @@ def train(grid_size=15,task='trace',max_trials=50000,max_length=9,verbose=False)
     return(n,performance_track,generalization)
 
 
-def test(n,task,grid_size,current_max_length,no_curves,only_trace_curve,device):
+def test(n,task,grid_size,current_max_length,no_curves,only_trace_curve,device,contrast = 1):
 
     prev_exploitation_probability = n.exploitation_probability
     n.exploitation_probability = 1
@@ -132,6 +132,7 @@ def test(n,task,grid_size,current_max_length,no_curves,only_trace_curve,device):
         t=Trace(4,grid_size)
     elif task == 'search_trace':
         t=SearchTrace(4,grid_size)
+        t.constrast = contrast
     elif task == 'trace_search':
         t=TraceSearch(4,grid_size)
         t.only_trace_curve = only_trace_curve

@@ -26,6 +26,8 @@ class Network():
         self.hidden_layer_2 = HiddenLayer(self.n_hidden_features, self.n_hidden_features, self.grid_size, has_Ymod=False,weight_sharing=self.weight_sharing)
         self.output_layer = OutputLayer(self.n_hidden_features, self.n_input_features, 1,self.grid_size,self.weight_sharing)
         self.horizontal = HorizLayer(self.n_input_features, self.grid_size)
+        
+
 
         self.save_activities = False
         
@@ -42,6 +44,32 @@ class Network():
         self.saveY1mod_disk = []
         self.saveY2_disk = []
         self.saveQ_disk = []
+        
+        self.bptt = False
+        self.loss_fn = torch.nn.MSELoss()
+        
+        self.timesteps = 50
+        
+    def make_optim(self):
+                
+        self.input_layer.register_params()
+        self.hidden_layer_1.register_params()
+        self.hidden_layer_2.register_params()
+        self.output_layer.register_params()
+        self.horizontal.register_params()
+        
+        params = []
+        params += [{'params': self.input_layer.parameters()}]
+        params += [{'params': self.hidden_layer_1.parameters()}]
+        params += [{'params': self.hidden_layer_2.parameters()}]
+        for name, param in self.output_layer.named_parameters():
+            if "skip" not in name:
+                params += [{'params': param,"lr":self.beta/25}]
+            else:
+                params += [{'params': param}]
+        params += [{'params': self.horizontal.parameters()}]
+        
+        self.optim = torch.optim.SGD(params, lr=self.beta) 
         
     def do_step(self, input_env, reward, reset_traces, device):
 
@@ -72,7 +100,7 @@ class Network():
         i = 0
         norm = 10
 
-        while i < 50 and norm > 0:
+        while i < self.timesteps and norm > 0:
             
             prevY1mod = self.Y1mod.detach()
 
@@ -104,17 +132,19 @@ class Network():
                 norm = torch.linalg.norm(self.Y1mod[0, :, :]-prevY1mod[0, :, :])
 
             i += 1
-
-        ([self.Xmodtest, self.Y1test, self.Y1modtest, self.Y2test], [self.Xmod, self.Y1, self.Y1mod, self.Y2]) = self.detach_reattach([self.Xmod, self.Y1, self.Y1mod, self.Y2])
-        ([self.Xmodtest_disk, self.Y1test_disk, self.Y1modtest_disk, self.Y2test_disk], [self.Xmod_disk, self.Y1_disk,
-                                                                                         self.Y1mod_disk, self.Y2_disk]) = self.detach_reattach([self.Xmod_disk, self.Y1_disk, self.Y1mod_disk, self.Y2_disk])
-
-        [XmodHoriz, Xmod_diskHoriz] = self.horizontal.forward(self.Xmod, self.Xmod_disk)
-        ([self.X, self.X_disk], [self.Xmod, self.Xmod_disk]) = self.input_layer.forward([self.Y1, self.Y1_disk], [self.Y1mod, self.Y1mod_disk], input_env)
-        self.Xmod = self.input_layer.activation_function((self.Xmod + XmodHoriz) * self.X)
-        self.Xmod_disk = self.input_layer.activation_function((self.Xmod_disk + Xmod_diskHoriz) * self.X_disk)
-        ([self.Y1, self.Y1_disk], [self.Y1mod, self.Y1mod_disk]) = self.hidden_layer_1.forward(lower_y=[self.X, self.X_disk], lower_ymod=[self.Xmod, self.Xmod_disk], upper_y=[self.Y2, self.Y2_disk])
-        [self.Y2, self.Y2_disk] = self.hidden_layer_2.forward(lower_y=[self.Y1, self.Y1_disk], lower_ymod=[self.Y1mod, self.Y1mod_disk])
+            
+            
+        if not self.bptt:
+            ([self.Xmodtest, self.Y1test, self.Y1modtest, self.Y2test], [self.Xmod, self.Y1, self.Y1mod, self.Y2]) = self.detach_reattach([self.Xmod, self.Y1, self.Y1mod, self.Y2])
+            ([self.Xmodtest_disk, self.Y1test_disk, self.Y1modtest_disk, self.Y2test_disk], [self.Xmod_disk, self.Y1_disk,
+                                                                                             self.Y1mod_disk, self.Y2_disk]) = self.detach_reattach([self.Xmod_disk, self.Y1_disk, self.Y1mod_disk, self.Y2_disk])
+    
+            [XmodHoriz, Xmod_diskHoriz] = self.horizontal.forward(self.Xmod, self.Xmod_disk)
+            ([self.X, self.X_disk], [self.Xmod, self.Xmod_disk]) = self.input_layer.forward([self.Y1, self.Y1_disk], [self.Y1mod, self.Y1mod_disk], input_env)
+            self.Xmod = self.input_layer.activation_function((self.Xmod + XmodHoriz) * self.X)
+            self.Xmod_disk = self.input_layer.activation_function((self.Xmod_disk + Xmod_diskHoriz) * self.X_disk)
+            ([self.Y1, self.Y1_disk], [self.Y1mod, self.Y1mod_disk]) = self.hidden_layer_1.forward(lower_y=[self.X, self.X_disk], lower_ymod=[self.Xmod, self.Xmod_disk], upper_y=[self.Y2, self.Y2_disk])
+            [self.Y2, self.Y2_disk] = self.hidden_layer_2.forward(lower_y=[self.Y1, self.Y1_disk], lower_ymod=[self.Y1mod, self.Y1mod_disk])
 
         self.Z, self.Z_disk = self.calc_output(device)
 
@@ -227,22 +257,36 @@ class Network():
         return (Zxmod, Zy1, Zy1mod, Zy2, Zxmod_disk, Zy1_disk, Zy1mod_disk, Zy2_disk)
 
     def do_learn(self, reward):
-        with torch.no_grad():
-            if self.winner_disk:
-                exp_value = self.Z_disk[self.action]
-            else:
-                exp_value = self.Z[self.action]
-            self.delta = reward - exp_value
-
-        (Zxmod, Zy1, Zy1mod, Zy2, Zxmod_disk, Zy1_disk, Zy1mod_disk, Zy2_disk) = self.accessory_propagation()
-        self.input_layer.update_layer([self.Xmod, self.Xmod_disk], [Zxmod, Zxmod_disk], self.beta, self.delta)
-        self.horizontal.update_layer([self.Xmod_disk, self.Xmod], [Zxmod_disk, Zxmod], self.beta, self.delta)
-        self.hidden_layer_1.update_layer([[self.Y1, self.Y1_disk], [self.Y1mod, self.Y1mod_disk]], [[Zy1, Zy1_disk], [Zy1mod, Zy1mod_disk]], self.beta, self.delta)
-        self.hidden_layer_2.update_layer([[self.Y2, self.Y2_disk]], [[Zy2, Zy2_disk]], self.beta, self.delta)
+        #with torch.no_grad():
         if self.winner_disk:
-            self.output_layer.update_layer(self.Z_disk[self.action], self.beta, self.delta, self.winner_disk)
+            exp_value = self.Z_disk[self.action]
         else:
-            self.output_layer.update_layer(self.Z[self.action], self.beta, self.delta, self.winner_disk)
+            exp_value = self.Z[self.action]
+        self.delta = reward - exp_value
+            
+            
+            
+        if not self.bptt:
+            (Zxmod, Zy1, Zy1mod, Zy2, Zxmod_disk, Zy1_disk, Zy1mod_disk, Zy2_disk) = self.accessory_propagation()
+            self.input_layer.update_layer([self.Xmod, self.Xmod_disk], [Zxmod, Zxmod_disk], self.beta, self.delta)
+            self.horizontal.update_layer([self.Xmod_disk, self.Xmod], [Zxmod_disk, Zxmod], self.beta, self.delta)
+            self.hidden_layer_1.update_layer([[self.Y1, self.Y1_disk], [self.Y1mod, self.Y1mod_disk]], [[Zy1, Zy1_disk], [Zy1mod, Zy1mod_disk]], self.beta, self.delta)
+            self.hidden_layer_2.update_layer([[self.Y2, self.Y2_disk]], [[Zy2, Zy2_disk]], self.beta, self.delta)
+            if self.winner_disk:
+                self.output_layer.update_layer(self.Z_disk[self.action], self.beta, self.delta, self.winner_disk)
+            else:
+                self.output_layer.update_layer(self.Z[self.action], self.beta, self.delta, self.winner_disk)
+        else:    
+            self.optim.zero_grad()
+            loss = self.loss_fn(torch.tensor([reward]).float(), exp_value.float())
+            loss.backward()
+            self.optim.step()
+            
+            self.input_layer.mask_weights()
+            self.hidden_layer_1.mask_weights()
+            self.hidden_layer_2.mask_weights()
+            self.output_layer.mask_weights()
+            
 
     def detach_reattach(self, x):
         detached = [xx.detach() for xx in x]

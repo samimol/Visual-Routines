@@ -30,6 +30,8 @@ class Task():
         self.current_reward = 0
         self.final_reward = 1.5
         
+        self.add_distractors = False
+        
         
         self.n_hidden_features = n_hidden_features
 
@@ -74,9 +76,14 @@ class Task():
         position_red_marker = np.random.randint(2)
         position_yellow_marker = 1 if position_red_marker == 0 else 0
         self.position_markers = [position_red_marker, position_yellow_marker]
-        self.feature_target = np.random.randint(2) 
+        self.feature_target = np.random.randint(2)
+        self.t_junction = False
+        if np.random.rand() > 10:
+            self.t_junction = True
         curve1,curve2 = self.pick_curve()
         self.draw_stimulus(curve1,curve2)
+        
+         
         
     def pick_curve(self):
         if self.no_curves:
@@ -90,14 +97,106 @@ class Task():
             while True:
                 try:
                     mask = np.zeros((self.grid_size, self.grid_size))
-                    curve1, mask1 = self.make_curves([], mask)
-                    curve2, mask2 = self.make_curves([], mask1)
+                    if not self.t_junction or self.curve_length == 3:
+                        flag_equidist = False
+                        while not flag_equidist:
+                            curve1, mask1 = self.make_curves([], mask,self.curve_length)
+                            curve2, mask2 = self.make_curves([], mask1,self.curve_length)
+                            x1,y1 = curve1[0] % self.grid_size, curve1[0] // self.grid_size
+                            x2,y2 = curve1[-1] % self.grid_size, curve1[-1] // self.grid_size
+                            x3,y3 = curve2[-1] % self.grid_size, curve2[-1] // self.grid_size
+                            flag_equidist = np.linalg.norm(np.array([x1,y1])-np.array([x2,y2])) == np.linalg.norm(np.array([x1,y1])-np.array([x3,y3]))
+                            
+                        if self.add_distractors:
+                            self.distractors = []
+                            for p in range(10):
+                                curve_distrc, mask2 = self.make_curves([], mask2,3)
+                                self.distractors.append(curve_distrc)
+                    else:
+                        curve1,curve2, mask, temp_masked_indexs = self.make_curves_t_junction(mask)
+                        curve1, mask1 = self.make_curves(curve1, mask)
+                        if mask1[temp_masked_indexs[0][0],temp_masked_indexs[0][1]] == 1:
+                            mask1[temp_masked_indexs[0][0],temp_masked_indexs[0][1]] = 0
+                        if mask1[temp_masked_indexs[1][0],temp_masked_indexs[1][1]] == 1:
+                            mask1[temp_masked_indexs[1][0],temp_masked_indexs[1][1]] = 0
+                      
+                        curve2, mask2 = self.make_curves(curve2, mask1)
                     break
                 except IndexError:
                     pass
+        #curve1 = [456,426,427, 428, 429, 430, 431, 432, 433, 434, 464, 494, 524, 554, 584, 614, 613, 612, 611, 610, 580, 550]
+        #curve2 = [552, 522, 492, 491, 490, 489, 488, 518, 548, 578, 608, 638, 668, 669, 670, 671, 672, 673, 674, 675, 676, 646]
+        #curve1.reverse()
+        #curve2.reverse()
         return (curve1, curve2)
                 
-    def make_curves(self,curve, mask_original):
+        
+    def make_curves_t_junction(self,mask_original):
+        mask = mask_original.copy()
+        curve1 = []
+        curve2 = []
+        # Getting the pixels available for the center pixel of the junction (not the borders)
+        x, y = np.where(mask == 0)
+        y = y[np.where((x != 0) & (x != 14))]
+        x = x[np.where((x != 0) & (x != 14))]
+
+        x = x[np.where((y != 0) & (y != 14))]
+        y = y[np.where((y != 0) & (y != 14))]
+
+        # Choosing a random pixel among the one availables
+        ind = np.random.randint(len(x))
+        center = x[ind] + y[ind] * self.grid_size
+        top = x[ind]-1 + (y[ind]) * self.grid_size
+        bottom = x[ind]+1 + (y[ind]) * self.grid_size
+        left = x[ind] + (y[ind] - 1) * self.grid_size
+        right = x[ind] + (y[ind] + 1) * self.grid_size
+        
+        # Getting the corners to mask them
+        corn_top_left = x[ind] - 1 + (y[ind] - 1) * self.grid_size
+        corn_top_right = x[ind] - 1 + (y[ind] + 1) * self.grid_size
+        corn_bot_left = x[ind] + 1 + (y[ind] - 1) * self.grid_size
+        corn_bot_right = x[ind] + 1 + (y[ind] + 1) * self.grid_size
+
+        #We mask those pixels, and call the function again
+        mask[center % self.grid_size, center // self.grid_size] += 1
+        mask[top % self.grid_size, top // self.grid_size] += 1
+        mask[bottom % self.grid_size, bottom // self.grid_size] += 1
+        mask[left % self.grid_size, left // self.grid_size] += 1
+        mask[right % self.grid_size, right // self.grid_size] += 1
+        
+        mask[corn_top_left % self.grid_size, corn_top_left // self.grid_size] += 1
+        mask[corn_top_right % self.grid_size, corn_top_right // self.grid_size] += 1
+        mask[corn_bot_left % self.grid_size, corn_bot_left // self.grid_size] += 1
+        mask[corn_bot_right % self.grid_size, corn_bot_right // self.grid_size] += 1
+
+        #choose curve1 and curve2
+        if np.random.rand() < 0.5:
+            curve1 = [top,center,bottom]
+            curve2 = [left,center,right]
+            
+            #to not have a snake eating itself
+            temp_masked_indexs = [(x[ind],y[ind]-2),(x[ind],y[ind]+2)]
+            mask[x[ind],y[ind]-2]  += 1
+            mask[x[ind],y[ind]+2]  += 1
+        else:
+            curve2 = [top,center,bottom]
+            curve1 = [left,center,right]  
+                 
+            #to not have a snake eating itself
+            temp_masked_indexs = [(x[ind]-2,y[ind]),(x[ind]+2,y[ind])]
+            mask[x[ind]-2,y[ind]] += 1
+            mask[x[ind]+2,y[ind]] += 1
+
+        #shuffling randomly start and end of curves
+        if np.random.rand() < 0.5:
+            curve1.reverse()
+        if np.random.rand() < 0.5:
+            curve2.reverse()
+
+        return curve1, curve2,mask,temp_masked_indexs
+
+
+    def make_curves(self,curve, mask_original,curve_length):
         mask = mask_original.copy()
         if len(curve) == 0:
             # Getting the pixels available
@@ -108,10 +207,15 @@ class Task():
             first_elem = x[ind] + y[ind] * self.grid_size
             
             #We mask this pixel, and call the function again
-            mask[first_elem % self.grid_size, first_elem // self.grid_size] = 1
+            mask[first_elem % self.grid_size, first_elem // self.grid_size] += 1
             curve.append(first_elem)
-            return self.make_curves(curve, mask)
+            return self.make_curves(curve, mask,curve_length)
         else:
+            if self.t_junction:
+                #shuffling randomly start and end of curves to propagate in both direction of the junction
+                if np.random.rand() < 0.5:
+                    curve.reverse()
+
             # We look at the last pixel of the curve and get the coordinate of 
             # its neihbours
             x_end = curve[-1] % self.grid_size
@@ -121,7 +225,7 @@ class Task():
             consecutives_y = [y_end - 1, y_end + 1]
             consecutives_y = [i for i in consecutives_y if i >= 0 and i < self.grid_size]
             
-            while len(curve) < self.curve_length:  
+            while len(curve) < curve_length:  
                 possible_next_value = []
                 
                 # If a neighbouring pixel is available, we record it as a
@@ -137,16 +241,29 @@ class Task():
                 # and mask the nehbours 
                 next_value = random.choice(possible_next_value)
                 curve.append(next_value[0] + next_value[1] * self.grid_size)
-                for i in range(len(possible_next_value)):
-                    mask[possible_next_value[i][0], possible_next_value[i][1]] = 1
-                return self.make_curves(curve, mask)
-            else:
-                
-                # If we reached the length of the curve, we only mask the nehbours
                 for i in range(len(consecutives_x)):
-                    mask[consecutives_x[i], y_end] = 1
+                    mask[consecutives_x[i], y_end] += 1
                 for i in range(len(consecutives_y)):
-                    mask[x_end, consecutives_y[i]] = 1
+                    mask[x_end, consecutives_y[i]] += 1
+                return self.make_curves(curve, mask,curve_length)
+            else:
+                for i in range(len(consecutives_x)):
+                    mask[consecutives_x[i], y_end] += 1
+                for i in range(len(consecutives_y)):
+                    mask[x_end, consecutives_y[i]] += 1
+                    
+                # We also mask begining of the curve
+                mask[(curve[0]%self.grid_size)-1, (curve[0]) // self.grid_size] += 1
+                mask[(curve[0]%self.grid_size)+1, (curve[0]) // self.grid_size] += 1
+                mask[(curve[0]%self.grid_size), (curve[0] // self.grid_size)-1] += 1
+                mask[(curve[0]%self.grid_size), (curve[0] // self.grid_size)+1] += 1
+                
+                mask[(curve[-1]%self.grid_size)-1, (curve[-1]) // self.grid_size] += 1
+                mask[(curve[-1]%self.grid_size)+1, (curve[-1]) // self.grid_size] += 1
+                mask[(curve[-1])%self.grid_size, (curve[-1] // self.grid_size)-1] += 1
+                mask[(curve[-1])%self.grid_size, (curve[-1] // self.grid_size)+1] += 1
+                
+
                 return curve, mask
 
         
@@ -177,7 +294,15 @@ class Trace(Task):
                         display[:, 3, curve2[i] % self.grid_size, curve2[i]//self.grid_size] = 1
                     else:
                         display[:, 2, curve2[i] % self.grid_size, curve2[i]//self.grid_size] = 1
-
+                if self.add_distractors:
+                    for distr in self.distractors:
+                        for i in range(len(distr)):
+                            if i == 0:
+                                display[:, 2, distr[0] % self.grid_size, distr[0]//self.grid_size] = 1
+                            elif i == 2:
+                                display[:, 3, distr[i] % self.grid_size, distr[i]//self.grid_size] = 1
+                            else:
+                                display[:, 2, distr[i] % self.grid_size, distr[i]//self.grid_size] = 1
         self.target_curve = curve1
         self.distractor_curve = curve2
         self.display = display
@@ -187,6 +312,7 @@ class SearchTrace(Task):
     
     def __init__(self,n_hidden_features,grid_size):
         self.task_type = 'searchtrace'
+        self.contrast = 1
         super().__init__(n_hidden_features,grid_size)
         
     def draw_stimulus(self,curve1,curve2):
@@ -218,9 +344,11 @@ class SearchTrace(Task):
         else:
             if self.feature_target == 0:
                 self.target_curve = curve1
+                display[:, 0, curve1[0] % self.grid_size, curve1[0]//self.grid_size] = self.contrast
                 self.distractor_curve = curve2
             else:
                 self.target_curve = curve2
+                display[:, 1, curve2[0] % self.grid_size, curve2[0]//self.grid_size] = self.contrast
                 self.distractor_curve = curve1
         self.display = display
         self.display_disk = display_disk
